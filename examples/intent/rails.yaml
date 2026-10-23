@@ -1,15 +1,19 @@
 # Safety rails. Code reads these; prompts never override them. Triggering
 # one stops or downgrades the plan and produces referral wording.
+# The logic and wording live in src/domestique/rails/; `threshold` is the
+# only value read from here (hrv-floor: share of baseline, ramp-ceiling: CTL/7d).
 - id: joint-pain
   trigger: "subjective.tags contains 'joint-pain'"
   action: stop_plan
-  message: "Joint pain reported. Plan paused; this is for a physio or doctor."
+  message: "Joint pain reported. Plan paused; this is for a physio or surgeon."
 - id: hrv-floor
   trigger: "wellness.hrv < 0.65 * baselines.hrv"
   action: downgrade_day
+  threshold: 0.65
 - id: ramp-ceiling
   trigger: "ctl_delta_7d > 7"
   action: refuse_additional_load
+  threshold: 7
 - id: illness
   trigger: "context.kind == 'illness'"
   action: no_intensity

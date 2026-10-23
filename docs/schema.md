@@ -62,3 +62,32 @@ Absent upstream values stay NULL, never zero.
 - View `activity_nutrition`: per activity, energy expended, carbohydrate used,
   effective carbohydrate ingested with `carbs_source` (`tag` or `platform`),
   the platform value, fluid and energy ingested.
+
+## Planned sessions and intent
+
+Change `planned-sessions-and-intent`, migration `0004_planned_and_intent.sql`.
+
+- `planned_sessions` gains `start_local timestamp` (midnight when the event is untimed),
+  `sport text`, `planned_moving_s integer`, `raw jsonb` (the intervals.icu event as
+  returned) and `paired_activity_id bigint → activities(id)`. A partial unique index
+  keeps one activity from serving two plans. `external_id` is the event id;
+  `planned_if` is the event's `icu_intensity / 100`; `structure` is its `workout_doc`.
+- Ingestion (`src/domestique/ingest/icu_plan.py`) reads `GET /api/v1/athlete/{id}/events`,
+  keeps `category == "WORKOUT"`, upserts on `(athlete_id, source, external_id)` and
+  recomputes the pairing for the ingested range on every run.
+- Pairing (`src/domestique/ingest/pairing.py`): same local date and sport family
+  (`VirtualRide` pairs with `Ride`), closest start time first, at most one activity per
+  plan and one plan per activity. Unpaired plans keep `paired_activity_id = NULL` and are
+  reported as missed, never deleted.
+- Plan vs execution (`src/domestique/analysis/plan_vs_execution.py`): one row per planned
+  session with title, description, heart-rate guidance parsed from the description and
+  the paired activity's NP, average and max HR, IF and work-interval HR (`activity_intervals`
+  with `kind = 'WORK'`, duration-weighted, as % of `hr_max`). When the work-interval HR
+  exceeds the guidance's upper bound by more than a margin (default 10 percentage points)
+  a `questions` row for the athlete is written with both numbers in `context`.
+- Intent (`src/domestique/intent/`): pydantic schemas for `goals.yaml`, `constraints.yaml`,
+  `overrides.yaml`, `rails.yaml`; unknown fields rejected; errors name file, entry and field.
+  The only write is `append_override`, which appends text to `overrides.yaml`.
+- Rails (`src/domestique/rails/`): `joint-pain`, `hrv-floor`, `ramp-ceiling`, `illness`,
+  each `(day: DayData, baselines, limits) -> RailResult | None`. `rails.yaml` supplies
+  optional `threshold` values only; logic and wording are code.
