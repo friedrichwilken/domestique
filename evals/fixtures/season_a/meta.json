@@ -1,0 +1,14 @@
+{
+  "athlete_id": "athlete-synth-season-a",
+  "days": 84,
+  "hr_max": 190,
+  "planted_effect": {
+    "description": "a hard session (planned IF >= 0.85) started in the evening costs about one hour of sleep that night",
+    "min_if": 0.85,
+    "sleep_cost_h": 1.0,
+    "start_hour_from": 17,
+    "start_hour_to": 23
+  },
+  "seed": 20260105,
+  "start": "2026-01-05"
+}

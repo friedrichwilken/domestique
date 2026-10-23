@@ -1,0 +1,101 @@
+# Textbook priors the replay starts from: the "seeded with textbook priors only" step of
+# DESIGN.md's onboarding. Generic physiology, no athlete in it. Every claim is `prior`;
+# the replay activates them in its own in-memory store, never in the athlete's claims store.
+# Bindings: docs/schema.md (claim_bindings). Two priors may compete for a metric; the
+# predictor takes the higher confidence, so the loop decides which one this athlete follows.
+# Order matters on a tie: the predictor breaks confidence ties by claim id and the replay
+# numbers claims in file order, so a more specific claim is listed before a general one.
+# Ranges are kept narrow on purpose: a claim that hits more than 95% of the time is flagged
+# as uninformative and stops predicting.
+athlete_id: textbook
+claims:
+  - text: "Power inside a heart-rate band is stable from week to week: the mean of the last three rides in the band predicts the next within about 5%."
+    source_layer: prior
+    horizon: day
+    confidence: 0.5
+    evidence:
+      - kind: reference
+        ref: textbook-hr-power-coupling
+        note: "heart rate tracks steady power within a session type over weeks"
+    bindings:
+      - metric: watts_at_hr
+        params: {range_pct: 5, rides: 3}
+  - text: "Peak heart rate in a session runs a few beats above the top of the prescribed heart-rate band."
+    source_layer: prior
+    horizon: day
+    confidence: 0.5
+    evidence:
+      - kind: reference
+        ref: textbook-hr-peaks
+        note: "surges and the last rep push heart rate past the target band"
+    bindings:
+      - metric: peak_hr
+        params: {offset: 5, range_abs: 4}
+  - text: "Next-morning HRV falls 5-10% after a hard session."
+    source_layer: prior
+    horizon: day
+    confidence: 0.5
+    evidence:
+      - kind: reference
+        ref: textbook-hrv-after-intensity
+        note: "parasympathetic withdrawal the morning after high-intensity work"
+    bindings:
+      - metric: hrv_next_morning
+        params: {change_pct: -7.5, range_pct: 5}
+        conditions: {min_if: 0.85}
+  - text: "Next-morning HRV after an easy session stays within normal day-to-day variation of baseline."
+    source_layer: prior
+    horizon: day
+    confidence: 0.5
+    evidence:
+      - kind: reference
+        ref: textbook-hrv-variation
+        note: "day-to-day HRV noise of several percent"
+    bindings:
+      - metric: hrv_next_morning
+        params: {range_pct: 5}
+        conditions: {max_if: 0.84}
+  - text: "Sleep on the night after an easy session stays at the recent median."
+    source_layer: prior
+    horizon: day
+    confidence: 0.5
+    evidence:
+      - kind: reference
+        ref: textbook-exercise-sleep-null
+        note: "meta-analyses find little effect of moderate exercise on same-night sleep"
+    bindings:
+      - metric: sleep_hours
+        params: {range_abs: 0.3}
+        conditions: {max_if: 0.84}
+  - text: "Intensity in the evening delays sleep onset and can cost about an hour of sleep that night."
+    source_layer: prior
+    horizon: day
+    confidence: 0.4
+    evidence:
+      - kind: reference
+        ref: textbook-evening-intensity-sleep
+        note: "vigorous exercise close to bedtime raises arousal and core temperature"
+    bindings:
+      - metric: sleep_hours
+        params: {offset: -0.9, range_abs: 0.3}
+        conditions: {min_if: 0.85, start_hour_from: 17, start_hour_to: 23}
+  - text: "Sleep on the night after a hard session stays at the recent median, whatever the time of day."
+    source_layer: prior
+    horizon: day
+    confidence: 0.5
+    evidence:
+      - kind: reference
+        ref: textbook-vigorous-exercise-sleep
+        note: "pooled studies find vigorous exercise does not shorten same-night sleep on average"
+    bindings:
+      - metric: sleep_hours
+        params: {range_abs: 0.3}
+        conditions: {min_if: 0.85}
+  - text: "Twelve weeks of threshold work raise FTP more than twelve weeks of VO2 work."
+    source_layer: prior
+    horizon: season
+    confidence: 0.4
+    evidence:
+      - kind: reference
+        ref: textbook-block-response
+        note: "population-average training studies; one athlete cannot learn this"

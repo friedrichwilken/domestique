@@ -30,3 +30,7 @@ ingest *args:
 
 db-up:
     docker compose up -d --wait
+
+# replay eval on the fixture season, loop on; the headline is the last line
+eval *args:
+    .venv/bin/python evals/replay.py {{args}}
