@@ -2,7 +2,7 @@
 
 ## 1. Planned sessions
 
-- [ ] 1.1 Lift the TrainingPeaks client and ingest planned sessions into `planned_sessions`; test: idempotent re-run on a fixture week with a double day
+- [ ] 1.1 Ingest planned workouts from the intervals.icu events API into `planned_sessions`; test: idempotent re-run on a fixture week with a double day
 - [ ] 1.2 Implement pairing by local date, sport and start-time proximity; test: double-day and unpaired scenarios
 
 ## 2. Intent layer

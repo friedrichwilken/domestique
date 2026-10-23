@@ -1,7 +1,6 @@
 # Copy to $DOMESTIQUE_HOME/config.yaml (default ~/.config/domestique/config.yaml).
 # Nothing in this file is read from the repo at run time.
 athlete_id: "i000000"          # intervals.icu athlete id
-tp_athlete_id: "0000000"       # TrainingPeaks athlete id (optional)
 timezone: "Europe/Berlin"
 bedtime: "22:30"
 hr_max: 190

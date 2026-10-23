@@ -11,7 +11,7 @@ Every other cornerstone reasons over facts. Until executed rides, wellness and t
 - Derived metrics as pure, unit-tested functions: efficiency factor, decoupling, per-interval L/R balance, watts at a heart-rate band, hours before bedtime.
 - Synthetic fixture rides so tests never need real athlete data or a live API.
 
-Out of scope: planned sessions from TrainingPeaks (change `planned-sessions-and-intent`), full stream retention beyond what metrics need, any interpretation of the numbers.
+Out of scope: planned sessions (change `planned-sessions-and-intent`), full stream retention beyond what metrics need, any interpretation of the numbers.
 
 ## Capabilities
 

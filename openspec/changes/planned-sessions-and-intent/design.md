@@ -2,7 +2,7 @@
 
 ## Context
 
-See proposal.md. Depends on change `data-plane`. The TrainingPeaks client is a thin wrapper over its API.
+See proposal.md. Depends on change `data-plane`. Planned workouts come from the same intervals.icu client as executed activities, via its events endpoint.
 
 ## Goals / Non-Goals
 
@@ -18,5 +18,5 @@ See proposal.md. Depends on change `data-plane`. The TrainingPeaks client is a t
 
 ## Risks / Trade-offs
 
-- TrainingPeaks descriptions are boilerplate; the join must not pretend they are intent. Mitigated by the question-not-conclusion requirement.
+- Workout descriptions on the platform are often boilerplate; the join must not pretend they are intent. Mitigated by the question-not-conclusion requirement.
 - Until the `questions` table exists, the join returns question objects in memory.

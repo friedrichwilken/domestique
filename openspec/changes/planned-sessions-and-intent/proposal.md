@@ -6,12 +6,12 @@ Plan-versus-execution has to be a join between what was prescribed and what was 
 
 ## What Changes
 
-- Ingest planned sessions from TrainingPeaks and pair them with executed activities.
+- Ingest planned sessions from the intervals.icu events API and pair them with executed activities.
 - Load `intent/*.yaml` (goals, constraints, overrides, rails) with schema validation.
 - Evaluate rails as pure functions over a day's data.
 - A plan-vs-execution join that flags intensity overshoot and produces a question for the athlete instead of a conclusion.
 
-Out of scope: writing anything back to TrainingPeaks; the planner; any model step.
+Out of scope: writing anything back to intervals.icu; any other platform; the planner; any model step.
 
 ## Capabilities
 
@@ -25,4 +25,4 @@ Out of scope: writing anything back to TrainingPeaks; the planner; any model ste
 
 ## Impact
 
-New `src/domestique/ingest/tp.py`, `src/domestique/intent/`, `src/domestique/rails/`; `questions` rows (table defined in change `claims-and-prediction-loop`; until then the join returns question objects).
+New `src/domestique/ingest/icu_plan.py`, `src/domestique/intent/`, `src/domestique/rails/`; `questions` rows (table defined in change `claims-and-prediction-loop`; until then the join returns question objects).
