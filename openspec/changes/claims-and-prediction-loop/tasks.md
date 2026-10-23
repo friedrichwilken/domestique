@@ -6,9 +6,9 @@
 - [x] 1.2 Repository layer with Postgres and in-memory implementations of query, propose, attach_evidence, confirm_or_retire; test: proposal without layer rejected, candidate status on propose
 - [x] 1.3 Confidence rules module (hit, miss, cap, retire, promote); test: one test per clause
 
-- [ ] 1.4 Add `horizon` to the claims schema, repositories, rules and MCP; caps 0.7/0.5 for week/season, no promotion for season, refused-promotion history row; test: season-with-hits and week-promoted scenarios
-- [ ] 1.5 Always-hit flag in the rules module (≥10 scored, >95% hits); test: eleventh-hit scenario
-- [ ] 1.6 Add a horizon to every claim in `evals/fixtures/claims_seed.yaml`; test: seed validates
+- [x] 1.4 Add `horizon` to the claims schema, repositories, rules and MCP; caps 0.7/0.5 for week/season, no promotion for season, refused-promotion history row; test: season-with-hits and week-promoted scenarios
+- [x] 1.5 Always-hit flag in the rules module (≥10 scored, >95% hits); test: eleventh-hit scenario
+- [x] 1.6 Add a horizon to every claim in `evals/fixtures/claims_seed.yaml`; test: seed validates
 
 ## 2. MCP
 
