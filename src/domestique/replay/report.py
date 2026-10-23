@@ -192,14 +192,20 @@ def _table(rows: Sequence[dict[str, str]]) -> list[str]:
     return lines
 
 
+def _yes(flag: bool) -> str:
+    return "yes" if flag else "no"
+
+
 def _claims_section(result: RunResult) -> list[str]:
+    """Every claim with its flags. Scored and hits count official and shadow predictions."""
     lines = [
-        "| claim | layer | horizon | status | confidence | scored | hits |",
-        "|---|---|---|---|---|---|---|",
+        "| claim | layer | horizon | status | confidence | scored | hits "
+        "| uninformative | overconfident |",
+        "|---|---|---|---|---|---|---|---|---|",
     ]
     lines.extend(
         f"| {c.text} | {c.source_layer} | {c.horizon} | {c.status} | {c.confidence:g} "
-        f"| {c.scored} | {c.hits} |"
+        f"| {c.scored} | {c.hits} | {_yes(c.uninformative)} | {_yes(c.overconfident)} |"
         for c in result.claims
     )
     return lines
@@ -231,8 +237,10 @@ def summary_markdown(result: RunResult, source_label: str) -> str:
     lines = [
         f"# Replay: {source_label}, {result.first.isoformat()} to {result.last.isoformat()}",
         "",
-        f"Loop {loop}. Sessions planned: {result.sessions}, predictions: {result.predictions}, "
-        f"scored: {len(result.scored)}, questions drafted: {len(result.questions)}.",
+        f"Loop {loop}. Sessions planned: {result.sessions}, predictions: {result.predictions} "
+        f"official and {result.shadows} shadow, scored: {len(result.scored)} official and "
+        f"{len(result.shadow_scored)} shadow, questions drafted: {len(result.questions)}. "
+        "Errors below are official predictions only.",
         "",
         "## Planted effect: sleep on evening-intensity sessions",
         "",

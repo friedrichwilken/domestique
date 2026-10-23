@@ -21,7 +21,7 @@ unit-tested against fixture rides.
 
 ## Athlete model
 
-- `claims(id, athlete_id, text, source_layer enum(observed,stated,prior), horizon enum(day,week,season), confidence numeric, status enum(active,retired,candidate), created_at, last_tested_at, created_by, hit_streak, scored, hits, always_hit)`
+- `claims(id, athlete_id, text, source_layer enum(observed,stated,prior), horizon enum(day,week,season), confidence numeric, status enum(active,retired,candidate), created_at, last_tested_at, created_by, hit_streak, scored, hits, uninformative, overconfident, calib_scored, calib_hits, calib_abs_error, calib_half_range)`
 - `claim_history(claim_id, ts, confidence, status, reason, by)` — append-only
 - `evidence(id, claim_id, kind enum(activity,interval,wellness,statement,reference,query), ref text, note)`
 
@@ -36,6 +36,17 @@ Migration `0005_loop.sql` (tasks 3.1-3.3): `predictions.planned_session_id` beco
 `basis jsonb` (the pre-registered inputs: HR band, base value, rides, superseded
 claims), `metric` is one of `watts_at_hr, peak_hr, hrv_next_morning, sleep_hours`,
 and `(planned_session_id, metric)` is unique, so a session is predicted once.
+
+Migration `0006_shadow_predictions.sql` (change `loop-calibration`): every applicable
+claim gets its own prediction, so predictions gain `claim_id uuid → claims(id)` and
+`official boolean`. Unique on `(planned_session_id, metric, claim_id)`, plus a partial
+unique index on `(planned_session_id, metric) WHERE official`: one reported prediction
+per session and metric, the rest are shadows, scored the same way. `claims` drops
+`always_hit` and gains the calibration flags `uninformative` (mean absolute error under
+a third of the mean half-range) and `overconfident` (hit rate under 60%), judged over
+the window `calib_scored`, `calib_hits`, `calib_abs_error` and `calib_half_range`
+(sums, in the metric's unit) once it holds ten outcomes; clearing the flags resets the
+window. Rules in `src/domestique/claims/rules.py`.
 
 - `claim_bindings(claim_id, metric, params jsonb, conditions jsonb, created_at)`: how a
   claim feeds a metric. `expected = base * (1 + change_pct/100) + offset`, range

@@ -146,12 +146,16 @@ def test_retired_and_candidate_claims_never_feed_predictions(status):
     assert result.predictions == ()
 
 
-def test_always_hit_flagged_claim_never_feeds_predictions():
+def test_uninformative_claim_is_never_official_but_still_shadow_scored():
     claims = MemoryStore()
     c = claim(claims)
-    flagged = replace(c, always_hit=True)
+    flagged = replace(c, uninformative=True)
     result = predict(planned(), [flagged], [Binding(c.id, Metric.PEAK_HR, range_abs=4)], HISTORY)
-    assert result.predictions == ()
+    assert result.official == ()
+    (shadow,) = result.predictions
+    assert not shadow.official and shadow.claim_id == c.id
+    gap = next(g for g in result.gaps if g.metric == Metric.PEAK_HR)
+    assert "uninformative" in gap.reason
 
 
 def test_hrv_claim_applies_by_session_type_and_time_of_day():
@@ -202,9 +206,12 @@ def test_observed_beats_prior_and_the_prior_is_listed_as_superseded():
         Binding(prior.id, Metric.PEAK_HR, offset=20, range_abs=4),
         Binding(observed.id, Metric.PEAK_HR, offset=5, range_abs=4),
     ]
-    (p,) = predict(planned(), claims.query_claims(), bindings, HISTORY).predictions
+    result = predict(planned(), claims.query_claims(), bindings, HISTORY)
+    (p,) = result.official
     assert p.claim_ids == (observed.id,)
     assert p.basis["superseded"] == [prior.id]
+    (shadow,) = (q for q in result.predictions if not q.official)
+    assert shadow.claim_id == prior.id and shadow.expected == 153.0
 
 
 def test_binding_parse_rejects_unknown_fields_and_zero_width_ranges():
@@ -300,6 +307,96 @@ def test_predictions_are_pre_registered_once_per_session_and_metric():
     )
     assert loop.save_predictions(again.predictions) == []
     assert len(loop.predictions) == 1
+
+
+# --- loop-calibration 1.1 / 1.2: shadow scoring --------------------------------
+
+
+def two_sleep_claims(claims, official_conf=0.5, rival_conf=0.4):
+    """Two claims on sleep hours: the official one says no change, the rival says -1 h."""
+    official = claim(claims, confidence=official_conf, text="sleep stays")
+    rival = claim(claims, confidence=rival_conf, text="sleep drops an hour")
+    bindings = [
+        Binding(official.id, Metric.SLEEP_HOURS, range_abs=0.3),
+        Binding(rival.id, Metric.SLEEP_HOURS, offset=-1.0, range_abs=0.3),
+    ]
+    return official, rival, bindings
+
+
+def test_reported_prediction_is_the_official_one():
+    claims, loop = MemoryStore(), MemoryLoopStore()
+    official, rival, bindings = two_sleep_claims(claims)
+    session = planned(paired=11)
+    result = predict(session, claims.query_claims(), bindings, HISTORY)
+    loop.save_predictions(result.predictions)
+    listed = loop.predictions_for(session.id)
+    assert len(listed) == 2
+    (reported,) = (p for p in listed if p.official)
+    (shadow,) = (p for p in listed if not p.official)
+    assert reported.claim_id == official.id and shadow.claim_id == rival.id
+    assert reported.basis["superseded"] == [rival.id]
+    assert "superseded" not in shadow.basis
+    # one official per metric: re-predicting keeps the first registration
+    assert loop.save_predictions(result.predictions) == []
+    assert describe_roles(predict(session, claims.query_claims(), bindings, HISTORY)) == {
+        (official.id, True),
+        (rival.id, False),
+    }
+
+
+def describe_roles(result):
+    return {(p.claim_id, p.official) for p in result.predictions}
+
+
+def test_late_official_prediction_is_kept_as_a_shadow():
+    claims, loop = MemoryStore(), MemoryLoopStore()
+    official, rival, bindings = two_sleep_claims(claims)
+    session = planned(paired=11)
+    first = predict(session, claims.query_claims(), bindings[:1], HISTORY)
+    loop.save_predictions(first.predictions)
+    # the rival's binding arrives later and it now outranks the first claim
+    boosted = [replace(c, confidence=0.6) if c.id == rival.id else c for c in claims.query_claims()]
+    second = predict(session, boosted, bindings, HISTORY)
+    (saved,) = loop.save_predictions(second.predictions)
+    assert saved.claim_id == rival.id and not saved.official
+    assert [p.claim_id for p in loop.predictions_for(session.id) if p.official] == [official.id]
+
+
+def test_rival_takes_over_after_the_official_claim_misses_four_times():
+    claims, loop = MemoryStore(), MemoryLoopStore()
+    # far enough apart that the official claim stays official through three misses
+    official, rival, bindings = two_sleep_claims(claims, official_conf=0.95, rival_conf=0.15)
+    for i in range(4):
+        session = planned(pid=100 + i, paired=11)
+        result = predict(session, claims.query_claims(status="active"), bindings, HISTORY)
+        (reported,) = result.official
+        assert reported.claim_id == official.id, i
+        loop.save_predictions(result.predictions)
+        # sleep baseline 7.5 h; the night came in an hour short: official misses, shadow hits
+        actuals = ridden(150.0, sleep=6.5)
+        _, applied = score_session(ATHLETE, session, loop, claims, actuals, None)
+        assert applied.outcomes == 2 and applied.adjustments >= 1
+    by_id = {c.id: c for c in claims.query_claims()}
+    assert by_id[rival.id].confidence > by_id[official.id].confidence
+    assert by_id[rival.id].hits == 4 and by_id[official.id].hits == 0
+    nxt = planned(pid=200, paired=11)
+    (reported,) = predict(nxt, claims.query_claims(status="active"), bindings, HISTORY).official
+    assert reported.claim_id == rival.id
+
+
+def test_shadow_misses_are_not_put_to_the_athlete_on_overshoot():
+    rows, session = overshoot_rows(work_hr=171.0)
+    flag = overshoot_flag(rows, session.id)
+    claims, loop = MemoryStore(), MemoryLoopStore()
+    good = claim(claims, confidence=0.5, text="peak runs 10 above the band")
+    bad = claim(claims, layer="prior", confidence=0.5, text="peak runs 40 above the band")
+    bindings = [
+        Binding(good.id, Metric.PEAK_HR, offset=10, range_abs=4),
+        Binding(bad.id, Metric.PEAK_HR, offset=40, range_abs=4),
+    ]
+    loop.save_predictions(predict(session, claims.query_claims(), bindings, HISTORY).predictions)
+    _, applied = score_session(ATHLETE, session, loop, claims, ridden(144.0), flag)
+    assert (applied.outcomes, applied.adjustments, applied.questions) == (2, 0, 0)
 
 
 # --- 3.3 overshoot miss --------------------------------------------------------

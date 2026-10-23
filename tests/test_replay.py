@@ -16,7 +16,13 @@ from domestique.loop.model import Metric
 from domestique.replay.bootstrap import ReviewEntry, enforce_season_rule, review_document
 from domestique.replay.fixture import FixtureSeason
 from domestique.replay.harness import evening_intensity, history_for, run_replay
-from domestique.replay.report import planted_effect, weekly_rows
+from domestique.replay.report import (
+    SEGMENT_EVENING,
+    planted_effect,
+    select,
+    summary_markdown,
+    weekly_rows,
+)
 from domestique.replay.run import main
 from domestique.replay.source import CursorView
 
@@ -24,6 +30,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SEASON = ROOT / "evals/fixtures/season_a"
 PRIORS = ROOT / "evals/priors.yaml"
 FILES = ("meta.json", "planned.json", "activities.json", "wellness.json")
+PLANTED_HOUR = 1.0  # the fixture's sleep cost of evening intensity
 
 
 @pytest.fixture(scope="module")
@@ -134,11 +141,55 @@ def test_weekly_rows_carry_signed_error_and_hit_rate(loop_on):
 # --- 2.3 loop on/off -----------------------------------------------------------
 
 
-def test_sleep_error_on_evening_intensity_shrinks_only_with_the_loop_on(loop_on, loop_off):
+def test_planted_effect_holds_on_the_committed_seed_with_the_loop_on(loop_on, loop_off):
     on, off = planted_effect(loop_on), planted_effect(loop_off)
-    assert on.second.mae < 0.6 * on.first.mae
+    # without the loop the planted hour is never learned: the error stays
     assert off.second.mae > 0.8 * off.first.mae
+    # with it, the second half is under half the loop-off error and under a third of the hour.
+    # Shadow scoring lets the rival take over within the first evening sessions, so the first
+    # half is already close to the noise floor; a first-half/second-half ratio no longer
+    # measures learning (see the loop-calibration PR).
     assert on.second.mae < 0.5 * off.second.mae
+    assert on.second.mae < PLANTED_HOUR / 3
+    assert on.first.mae < off.first.mae
+    evening = next(c for c in loop_on.claims if c.text.startswith("Intensity in the evening"))
+    late = select(loop_on, Metric.SLEEP_HOURS, SEGMENT_EVENING, range(7, 13))
+    assert late and all(s.prediction.claim_id == evening.id for s in late)
+
+
+def test_rivals_are_shadow_scored_and_reported_apart(loop_on):
+    assert loop_on.shadow_scored
+    assert all(not s.prediction.official for s in loop_on.shadow_scored)
+    assert all(s.prediction.official for s in loop_on.scored)
+    assert loop_on.shadows == len(loop_on.shadow_scored)
+
+
+def test_report_lists_both_flags_per_claim(season, priors, tmp_path):
+    wide = SeedClaim(
+        text="Peak heart rate lands within 30 bpm of the band top (test only).",
+        source_layer="prior",
+        horizon="day",
+        confidence=0.5,
+        evidence=(),
+        bindings=(SeedBinding("peak_hr", {"offset": 5, "range_abs": 30}, {}),),
+    )
+    seed = replace(
+        priors, claims=(wide, *(c for c in priors.claims if not c.text.startswith("Peak")))
+    )
+    result = run_replay(season, seed, loop_on=True)
+    flagged = next(c for c in result.claims if c.text == wide.text)
+    assert flagged.uninformative and not flagged.overconfident
+    summary = summary_markdown(result, "fixture")
+    assert "| uninformative | overconfident |" in summary
+    rows = [line for line in summary.splitlines() if line.startswith(f"| {wide.text}")]
+    assert len(rows) == 1 and rows[0].endswith("| yes | no |")
+    claim_rows = [
+        line for line in summary.split("## Claims at the end")[1].splitlines() if line[:2] == "| "
+    ]
+    assert len(claim_rows) == len(result.claims) + 1  # plus the header
+    doc = review_document(result, "fixture")
+    entry = next(c for c in doc["candidates"] if c["text"] == wide.text)
+    assert any("uninformative flag" in n for n in entry["notes"])
 
 
 def test_loop_off_moves_no_confidence(loop_off, priors):

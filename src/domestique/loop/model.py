@@ -170,6 +170,12 @@ type Basis = dict[str, object]
 
 @dataclass(frozen=True)
 class Prediction:
+    """One claim's prediction for a session and metric.
+
+    ``official`` marks the one the precedence rule picked, the prediction that is
+    reported; the others are shadows, scored the same way.
+    """
+
     planned_session_id: int
     metric: Metric
     expected: float
@@ -178,6 +184,15 @@ class Prediction:
     claim_ids: tuple[str, ...]
     basis: Basis = field(default_factory=dict)
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    official: bool = True
+
+    @property
+    def claim_id(self) -> str:
+        return self.claim_ids[0]
+
+    @property
+    def half_range(self) -> float:
+        return (self.high - self.low) / 2
 
     def hit(self, actual: float) -> bool:
         return self.low <= actual <= self.high
@@ -194,8 +209,12 @@ class Gap:
 
 @dataclass(frozen=True)
 class PredictionSet:
-    predictions: tuple[Prediction, ...]
+    predictions: tuple[Prediction, ...]  # official and shadow
     gaps: tuple[Gap, ...]
+
+    @property
+    def official(self) -> tuple[Prediction, ...]:
+        return tuple(p for p in self.predictions if p.official)
 
 
 @dataclass(frozen=True)

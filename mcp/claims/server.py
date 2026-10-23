@@ -1,9 +1,9 @@
 """Claims MCP server (stdio).
 
-Tools: query_claims, propose_claim, attach_evidence, add_binding, confirm_or_retire.
-confirm_or_retire is human-gated: it refuses unless ``human_token`` equals the
-DOMESTIQUE_HUMAN_TOKEN environment variable. add_binding is gated the same way
-unless the claim is still a candidate. Storage: Postgres via
+Tools: query_claims, propose_claim, attach_evidence, add_binding, confirm_or_retire,
+clear_flags. confirm_or_retire and clear_flags are human-gated: they refuse unless
+``human_token`` equals the DOMESTIQUE_HUMAN_TOKEN environment variable. add_binding
+is gated the same way unless the claim is still a candidate. Storage: Postgres via
 DOMESTIQUE_DATABASE_URL. See README.md.
 """
 
@@ -172,6 +172,17 @@ def confirm_or_retire(claim_id: str, status: str, reason: str, human_token: str)
     """Set a claim to 'active' or 'retired'. Human-gated: needs the human token."""
     require_human(human_token)
     return _plain(get_store().confirm_or_retire(claim_id, status, reason, "human"))
+
+
+@mcp.tool()
+def clear_flags(claim_id: str, reason: str, human_token: str) -> dict[str, Any]:
+    """Clear a claim's uninformative and overconfident flags. Human-gated.
+
+    Use after the claim's range was changed (add_binding) at review. Clearing starts
+    a new calibration window: the flags are judged again after ten more outcomes.
+    """
+    require_human(human_token, "clear_flags")
+    return _plain(get_store().clear_flags(claim_id, reason, "human"))
 
 
 if __name__ == "__main__":

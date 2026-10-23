@@ -19,23 +19,36 @@ is scored:
   three confounded samples a year cannot be learned from one athlete. The
   refused promotion is returned as a note, which the store writes as its own
   history row (once, when the streak first reaches ``PROMOTE_AFTER``).
-- Always-hit flag: a claim with at least ``FLAG_MIN_SCORED`` (10) scored
-  predictions and a hit rate above ``FLAG_HIT_RATE`` (95%), counted before the
-  prediction being scored, has ranges too wide to mean anything. It is
-  flagged (``always_hit``, plus a history note), and while flagged a hit no
-  longer raises its confidence. Misses still lower it. The flag stays until
-  a human clears it (``ClaimsStore.clear_always_hit``).
+- Calibration flags. Each scored prediction adds to the claim's calibration
+  window: ``calib_scored``, ``calib_hits``, the sum of absolute errors
+  (``calib_abs_error``) and the sum of half-ranges (``calib_half_range``),
+  this outcome included. With at least ``CALIB_MIN_SCORED`` (10) in the
+  window:
+
+  - *uninformative*: mean absolute error below ``UNINFORMATIVE_RATIO`` (a
+    third) of the mean half-range. The range could be three times narrower
+    and still hit. Flagged (plus a history note); while flagged a hit no
+    longer raises confidence, misses still lower it.
+  - *overconfident*: hit rate below ``OVERCONFIDENT_HIT_RATE`` (60%), the
+    break-even rate of the hit and miss steps. Flagged (plus a history note),
+    and every outcome scored while the window's hit rate is below that line
+    costs one extra ``MISS_STEP`` on top of the normal rule.
+
+  Hit rate alone never flags a claim as uninformative: a well-sized range
+  hits 85-90% of the time. Both flags stay until a human clears them
+  (``ClaimsStore.clear_flags``), which also starts a new calibration window,
+  since the old one measured the range before it was changed.
 - Every scored prediction increments ``scored`` and, on a hit, ``hits``.
 - Retired claims are never adjusted (they are no longer tested).
 
 ``adjust_confidence`` returns the updated claim; ``adjust_with_notes`` also
-returns the history notes (refused promotion, flag set) for the caller to
+returns the history notes (refused promotion, flags set) for the caller to
 persist with ``record_adjustment``.
 """
 
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
@@ -52,8 +65,9 @@ RETIRE_BELOW = 0.1
 PRIOR_CAP = 0.7
 WEEK_CAP = 0.7
 SEASON_CAP = 0.5
-FLAG_MIN_SCORED = 10
-FLAG_HIT_RATE = 0.95
+CALIB_MIN_SCORED = 10
+UNINFORMATIVE_RATIO = 1 / 3
+OVERCONFIDENT_HIT_RATE = 0.6
 
 
 class SourceLayer(StrEnum):
@@ -77,30 +91,75 @@ class Status(StrEnum):
     CANDIDATE = "candidate"
 
 
-def adjust_confidence(claim: Claim, hit: bool) -> Claim:
+@dataclass(frozen=True)
+class Calibration:
+    """A claim's calibration window after one more outcome, and the flags it raises."""
+
+    scored: int
+    hits: int
+    abs_error: float
+    half_range: float
+
+    @property
+    def ready(self) -> bool:
+        return self.scored >= CALIB_MIN_SCORED
+
+    @property
+    def uninformative(self) -> bool:
+        return self.ready and self.abs_error < UNINFORMATIVE_RATIO * self.half_range
+
+    @property
+    def overconfident(self) -> bool:
+        return self.ready and self.hits / self.scored < OVERCONFIDENT_HIT_RATE
+
+
+def calibration(claim: Claim, hit: bool, abs_error: float, half_range: float) -> Calibration:
+    """The claim's window with this outcome added."""
+    return Calibration(
+        scored=claim.calib_scored + 1,
+        hits=claim.calib_hits + (1 if hit else 0),
+        abs_error=round(claim.calib_abs_error + abs(abs_error), 6),
+        half_range=round(claim.calib_half_range + abs(half_range), 6),
+    )
+
+
+def adjust_confidence(
+    claim: Claim, hit: bool, abs_error: float = 0.0, half_range: float = 0.0
+) -> Claim:
     """Return an updated copy of ``claim`` after a scored prediction."""
-    return adjust_with_notes(claim, hit)[0]
+    return adjust_with_notes(claim, hit, abs_error, half_range)[0]
 
 
-def _always_hit_check(claim: Claim) -> tuple[bool, list[str]]:
-    """Whether the always-hit flag is (now) set, plus the note if it was just raised."""
-    if claim.always_hit:
-        return True, []
-    if claim.scored >= FLAG_MIN_SCORED and claim.hits / claim.scored > FLAG_HIT_RATE:
-        note = (
-            f"always-hit flag set: {claim.hits}/{claim.scored} scored predictions hit, "
-            "ranges are uninformative; hits no longer raise confidence"
+def _flag_notes(claim: Claim, window: Calibration) -> list[str]:
+    """History notes for flags this outcome raises for the first time."""
+    notes = []
+    if window.uninformative and not claim.uninformative:
+        notes.append(
+            f"uninformative flag set: mean absolute error {window.abs_error / window.scored:.3g} "
+            f"is under a third of the mean half-range {window.half_range / window.scored:.3g} "
+            f"over {window.scored} scored predictions; hits no longer raise confidence"
         )
-        return True, [note]
-    return False, []
+    if window.overconfident and not claim.overconfident:
+        notes.append(
+            f"overconfident flag set: {window.hits}/{window.scored} scored predictions hit, "
+            f"under {OVERCONFIDENT_HIT_RATE:.0%}; the range is too narrow, "
+            "each outcome costs an extra miss step"
+        )
+    return notes
 
 
-def _apply_outcome(claim: Claim, hit: bool, flagged: bool) -> tuple[float, int]:
+def _apply_outcome(
+    claim: Claim, hit: bool, uninformative: bool, penalty: bool
+) -> tuple[float, int]:
     """Raw confidence and hit streak after one outcome, before caps and promotion."""
-    if hit:
-        confidence = claim.confidence if flagged else min(CONF_MAX, claim.confidence + HIT_STEP)
-        return confidence, claim.hit_streak + 1
-    return max(CONF_MIN, claim.confidence - MISS_STEP), 0
+    confidence = claim.confidence
+    if hit and not uninformative:
+        confidence = min(CONF_MAX, confidence + HIT_STEP)
+    elif not hit:
+        confidence -= MISS_STEP
+    if penalty:
+        confidence -= MISS_STEP
+    return max(CONF_MIN, confidence), (claim.hit_streak + 1 if hit else 0)
 
 
 def _promote(layer: SourceLayer, horizon: Horizon, streak: int) -> tuple[SourceLayer, list[str]]:
@@ -121,16 +180,21 @@ def _capped(confidence: float, layer: SourceLayer, horizon: Horizon) -> float:
     return round(min(confidence, HORIZON_CAP[horizon]), 3)
 
 
-def adjust_with_notes(claim: Claim, hit: bool) -> tuple[Claim, list[str]]:
+def adjust_with_notes(
+    claim: Claim, hit: bool, abs_error: float = 0.0, half_range: float = 0.0
+) -> tuple[Claim, list[str]]:
     """Return ``(updated claim, history notes)`` after a scored prediction.
 
-    Works on any dataclass with source_layer, horizon, confidence, status,
-    hit_streak, scored, hits and always_hit.
+    ``abs_error`` is ``|actual - expected|`` and ``half_range`` is
+    ``(high - low) / 2`` of the scored prediction, in the metric's unit.
+    Works on any dataclass with the fields of ``claims.store.Claim``.
     """
     if claim.status == Status.RETIRED:
         return claim, []
-    flagged, notes = _always_hit_check(claim)
-    confidence, streak = _apply_outcome(claim, hit, flagged)
+    window = calibration(claim, hit, abs_error, half_range)
+    notes = _flag_notes(claim, window)
+    uninformative = claim.uninformative or window.uninformative
+    confidence, streak = _apply_outcome(claim, hit, uninformative, window.overconfident)
     horizon = Horizon(claim.horizon)
     layer, promotion_notes = _promote(claim.source_layer, horizon, streak)
     notes.extend(promotion_notes)
@@ -144,6 +208,11 @@ def adjust_with_notes(claim: Claim, hit: bool) -> tuple[Claim, list[str]]:
         status=status,
         scored=claim.scored + 1,
         hits=claim.hits + (1 if hit else 0),
-        always_hit=flagged,
+        uninformative=uninformative,
+        overconfident=claim.overconfident or window.overconfident,
+        calib_scored=window.scored,
+        calib_hits=window.hits,
+        calib_abs_error=window.abs_error,
+        calib_half_range=window.half_range,
     )
     return updated, notes

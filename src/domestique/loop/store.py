@@ -1,15 +1,19 @@
 """Storage for the loop: bindings, predictions, outcomes and questions.
 
 One interface, an in-memory implementation for tests and the replay harness,
-and a Postgres one against migrations 0002 and 0005. Predictions are
-pre-registered once per session and metric; an outcome is written once per
-prediction, and ``record_outcome`` says whether this call wrote it.
+and a Postgres one against migrations 0002, 0005 and 0006. Predictions are
+pre-registered once per session, metric and claim, with at most one official
+prediction per session and metric: an official prediction arriving after one
+is already registered is kept as a shadow (the first registration stays the
+reported one). ``save_predictions`` returns what it wrote, as written. An
+outcome is written once per prediction, and ``record_outcome`` says whether
+this call wrote it.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Protocol
 
 from psycopg.types.json import Jsonb
@@ -62,9 +66,18 @@ class MemoryLoopStore:
         return list(self.binding_rows.values())
 
     def save_predictions(self, predictions: Sequence[Prediction]) -> list[Prediction]:
-        taken = {(p.planned_session_id, p.metric) for p in self.predictions.values()}
-        saved = [p for p in predictions if (p.planned_session_id, p.metric) not in taken]
-        self.predictions.update((p.id, p) for p in saved)
+        saved = []
+        for p in predictions:
+            mine = [
+                q
+                for q in self.predictions.values()
+                if (q.planned_session_id, q.metric) == (p.planned_session_id, p.metric)
+            ]
+            if any(q.claim_id == p.claim_id for q in mine):
+                continue
+            row = _as_shadow_if_taken(p, any(q.official for q in mine))
+            self.predictions[row.id] = row
+            saved.append(row)
         return saved
 
     def predictions_for(self, planned_session_id: int) -> list[Prediction]:
@@ -83,6 +96,10 @@ class MemoryLoopStore:
         self.questions.append(question)
 
 
+def _as_shadow_if_taken(p: Prediction, official_taken: bool) -> Prediction:
+    return replace(p, official=False) if p.official and official_taken else p
+
+
 def _prediction(r: tuple[Any, ...]) -> Prediction:
     return Prediction(
         id=str(r[0]),
@@ -93,6 +110,7 @@ def _prediction(r: tuple[Any, ...]) -> Prediction:
         high=float(r[5]),
         claim_ids=tuple(str(c) for c in r[6]),
         basis=dict(r[7]),
+        official=bool(r[8]),
     )
 
 
@@ -121,32 +139,44 @@ class PgLoopStore:
         ).fetchall()
         return [parse_binding(str(r[0]), r[1], r[2], r[3]) for r in rows]
 
+    def _official_taken(self, p: Prediction) -> bool:
+        row = self.conn.execute(
+            "SELECT 1 FROM predictions WHERE planned_session_id = %s AND metric = %s AND official",
+            (p.planned_session_id, p.metric.value),
+        ).fetchone()
+        return row is not None
+
     def save_predictions(self, predictions: Sequence[Prediction]) -> list[Prediction]:
         saved = []
         for p in predictions:
-            row = self.conn.execute(
-                "INSERT INTO predictions (id, planned_session_id, metric, expected, low, high, "
-                "claim_ids, basis) VALUES (%s, %s, %s, %s, %s, %s, %s::uuid[], %s) "
-                "ON CONFLICT (planned_session_id, metric) DO NOTHING RETURNING id",
+            row = _as_shadow_if_taken(p, p.official and self._official_taken(p))
+            inserted = self.conn.execute(
+                "INSERT INTO predictions (id, planned_session_id, metric, claim_id, official, "
+                "expected, low, high, claim_ids, basis) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::uuid[], %s) "
+                "ON CONFLICT (planned_session_id, metric, claim_id) DO NOTHING RETURNING id",
                 (
-                    p.id,
-                    p.planned_session_id,
-                    p.metric.value,
-                    p.expected,
-                    p.low,
-                    p.high,
-                    list(p.claim_ids),
-                    Jsonb(p.basis),
+                    row.id,
+                    row.planned_session_id,
+                    row.metric.value,
+                    row.claim_id,
+                    row.official,
+                    row.expected,
+                    row.low,
+                    row.high,
+                    list(row.claim_ids),
+                    Jsonb(row.basis),
                 ),
             ).fetchone()
-            if row is not None:
-                saved.append(p)
+            if inserted is not None:
+                saved.append(row)
         return saved
 
     def predictions_for(self, planned_session_id: int) -> list[Prediction]:
         rows = self.conn.execute(
-            "SELECT id, planned_session_id, metric, expected, low, high, claim_ids, basis "
-            "FROM predictions WHERE planned_session_id = %s ORDER BY metric",
+            "SELECT id, planned_session_id, metric, expected, low, high, claim_ids, basis, "
+            "official FROM predictions WHERE planned_session_id = %s "
+            "ORDER BY metric, official DESC, claim_id",
             (planned_session_id,),
         ).fetchall()
         return [_prediction(r) for r in rows]
