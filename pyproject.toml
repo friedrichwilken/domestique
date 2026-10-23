@@ -6,7 +6,7 @@ requires-python = ">=3.12"
 dependencies = ["httpx", "psycopg[binary]", "pydantic", "pyyaml", "anthropic", "mcp>=1.2,<2"]
 
 [project.optional-dependencies]
-dev = ["pytest", "ruff", "mypy", "pre-commit", "types-PyYAML"]
+dev = ["pytest", "ruff==0.17.2", "mypy", "pre-commit", "types-PyYAML"]
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -44,6 +44,7 @@ select = [
 ignore = [
   "ANN401",   # Any is sometimes the honest type at an API boundary
   "PLR0913",  # covered by the complexity ceiling; argument count alone is not the problem
+  "PLR0917",  # same reasoning for positional arguments
   "TRY003",   # long messages in exceptions are fine
 ]
 

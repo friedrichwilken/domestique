@@ -82,7 +82,7 @@ class ClaimsStore(Protocol):
         text_contains: str | None = None,
     ) -> list[Claim]: ...
 
-    def propose_claim(  # noqa: PLR0917  # callers pass all seven positionally (tests, mcp)
+    def propose_claim(
         self,
         athlete_id: str,
         text: str,
@@ -168,7 +168,7 @@ class MemoryStore:
             and not (text_contains and text_contains.lower() not in c.text.lower())
         ]
 
-    def propose_claim(  # noqa: PLR0917  # callers pass all seven positionally (tests, mcp)
+    def propose_claim(
         self,
         athlete_id: str,
         text: str,
@@ -331,7 +331,7 @@ class PgStore:
             rows = cur.fetchall()
             return [self._row_to_claim(r, self._evidence(cur, r[0])) for r in rows]
 
-    def propose_claim(  # noqa: PLR0917  # callers pass all seven positionally (tests, mcp)
+    def propose_claim(
         self,
         athlete_id: str,
         text: str,
