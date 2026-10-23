@@ -7,11 +7,12 @@ Every state change appends a claim_history row (never updated or deleted).
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
-from domestique.claims.rules import SourceLayer, Status
+from domestique.claims.rules import HORIZON_CAP, Horizon, SourceLayer, Status
 
 EVIDENCE_KINDS = ("activity", "interval", "wellness", "statement", "reference", "query")
 
@@ -30,12 +31,16 @@ class Claim:
     athlete_id: str
     text: str
     source_layer: SourceLayer
+    horizon: Horizon
     confidence: float
     status: Status
     created_by: str
     created_at: datetime
     last_tested_at: datetime | None = None
     hit_streak: int = 0
+    scored: int = 0
+    hits: int = 0
+    always_hit: bool = False
     evidence: tuple[Evidence, ...] = ()
 
 
@@ -72,6 +77,7 @@ class ClaimsStore(Protocol):
         athlete_id: str,
         text: str,
         source_layer: str,
+        horizon: str,
         evidence: list[dict[str, Any]],
         created_by: str,
         confidence: float = 0.3,
@@ -83,13 +89,33 @@ class ClaimsStore(Protocol):
 
     def confirm_or_retire(self, claim_id: str, status: str, reason: str, by: str) -> Claim: ...
 
-    def record_adjustment(self, claim: Claim, reason: str, by: str) -> Claim: ...
+    def record_adjustment(
+        self, claim: Claim, reason: str, by: str, notes: Sequence[str] = ()
+    ) -> Claim: ...
+
+    def clear_always_hit(self, claim_id: str, reason: str, by: str) -> Claim: ...
 
     def history(self, claim_id: str) -> list[HistoryRow]: ...
 
 
-def _validate_proposal(text: str, source_layer: str, evidence: list[dict[str, Any]]) -> None:
+def _validate_proposal(
+    text: str, source_layer: str, horizon: str, evidence: list[dict[str, Any]],
+    confidence: float = 0.3,
+) -> None:
     SourceLayer(source_layer)  # raises ValueError if unknown: no layer, no claim
+    if not horizon:
+        raise ValueError("horizon is required: one of day, week, season")
+    try:
+        Horizon(horizon)
+    except ValueError:
+        raise ValueError(
+            f"horizon must be one of day, week, season, got {horizon!r}"
+        ) from None
+    if confidence > HORIZON_CAP[Horizon(horizon)]:
+        raise ValueError(
+            f"confidence {confidence} exceeds the {horizon}-horizon cap "
+            f"{HORIZON_CAP[Horizon(horizon)]}"
+        )
     if not text.strip():
         raise ValueError("claim text is empty")
     for e in evidence:
@@ -129,13 +155,16 @@ class MemoryStore:
             out.append(c)
         return out
 
-    def propose_claim(self, athlete_id, text, source_layer, evidence, created_by, confidence=0.3):
-        _validate_proposal(text, source_layer, evidence)
+    def propose_claim(
+        self, athlete_id, text, source_layer, horizon, evidence, created_by, confidence=0.3
+    ):
+        _validate_proposal(text, source_layer, horizon, evidence, confidence)
         c = Claim(
             id=str(uuid.uuid4()),
             athlete_id=athlete_id,
             text=text,
             source_layer=SourceLayer(source_layer),
+            horizon=Horizon(horizon),
             confidence=confidence,
             status=Status.CANDIDATE,
             created_by=created_by,
@@ -166,12 +195,20 @@ class MemoryStore:
         self._log(c, reason, by)
         return c
 
-    def record_adjustment(self, claim, reason, by):
-        """Persist a claim returned by rules.adjust_confidence and log it."""
+    def record_adjustment(self, claim, reason, by, notes=()):
+        """Persist a claim returned by rules.adjust_with_notes; log reason, then each note."""
         self._get(claim.id)
         c = replace(claim, last_tested_at=datetime.now(UTC))
         self._claims[c.id] = c
         self._log(c, reason, by)
+        for note in notes:
+            self._log(c, note, by)
+        return c
+
+    def clear_always_hit(self, claim_id, reason, by):
+        c = replace(self._get(claim_id), always_hit=False)
+        self._claims[claim_id] = c
+        self._log(c, f"always-hit flag cleared: {reason}", by)
         return c
 
     def history(self, claim_id):
@@ -180,7 +217,7 @@ class MemoryStore:
 
 _COLS = (
     "id, athlete_id, text, source_layer, confidence, status, created_by, created_at, "
-    "last_tested_at, hit_streak"
+    "last_tested_at, hit_streak, horizon, scored, hits, always_hit"
 )
 
 
@@ -194,7 +231,8 @@ class PgStore:
         return Claim(
             id=str(r[0]), athlete_id=r[1], text=r[2], source_layer=SourceLayer(r[3]),
             confidence=float(r[4]), status=Status(r[5]), created_by=r[6], created_at=r[7],
-            last_tested_at=r[8], hit_streak=r[9], evidence=tuple(evidence),
+            last_tested_at=r[8], hit_streak=r[9], horizon=Horizon(r[10]), scored=r[11],
+            hits=r[12], always_hit=r[13], evidence=tuple(evidence),
         )
 
     def _evidence(self, cur, claim_id) -> list[Evidence]:
@@ -234,13 +272,16 @@ class PgStore:
             rows = cur.fetchall()
             return [self._row_to_claim(r, self._evidence(cur, r[0])) for r in rows]
 
-    def propose_claim(self, athlete_id, text, source_layer, evidence, created_by, confidence=0.3):
-        _validate_proposal(text, source_layer, evidence)
+    def propose_claim(
+        self, athlete_id, text, source_layer, horizon, evidence, created_by, confidence=0.3
+    ):
+        _validate_proposal(text, source_layer, horizon, evidence, confidence)
         with self.conn.transaction(), self.conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO claims (athlete_id, text, source_layer, confidence, status, "
-                "created_by) VALUES (%s, %s, %s, %s, 'candidate', %s) RETURNING id",
-                (athlete_id, text, source_layer, confidence, created_by),
+                "INSERT INTO claims (athlete_id, text, source_layer, horizon, confidence, "
+                "status, created_by) VALUES (%s, %s, %s, %s, %s, 'candidate', %s) "
+                "RETURNING id",
+                (athlete_id, text, source_layer, horizon, confidence, created_by),
             )
             cid = cur.fetchone()[0]
             for e in evidence:
@@ -272,17 +313,28 @@ class PgStore:
             self._log(cur, c, reason, by)
             return c
 
-    def record_adjustment(self, claim, reason, by):
+    def record_adjustment(self, claim, reason, by, notes=()):
         with self.conn.transaction(), self.conn.cursor() as cur:
             self._get(cur, claim.id)
             cur.execute(
                 "UPDATE claims SET confidence = %s, status = %s, source_layer = %s, "
-                "hit_streak = %s, last_tested_at = now() WHERE id = %s",
+                "hit_streak = %s, scored = %s, hits = %s, always_hit = %s, "
+                "last_tested_at = now() WHERE id = %s",
                 (claim.confidence, claim.status.value, claim.source_layer.value,
-                 claim.hit_streak, claim.id),
+                 claim.hit_streak, claim.scored, claim.hits, claim.always_hit, claim.id),
             )
             c = self._get(cur, claim.id)
             self._log(cur, c, reason, by)
+            for note in notes:
+                self._log(cur, c, note, by)
+            return c
+
+    def clear_always_hit(self, claim_id, reason, by):
+        with self.conn.transaction(), self.conn.cursor() as cur:
+            self._get(cur, claim_id)
+            cur.execute("UPDATE claims SET always_hit = false WHERE id = %s", (claim_id,))
+            c = self._get(cur, claim_id)
+            self._log(cur, c, f"always-hit flag cleared: {reason}", by)
             return c
 
     def history(self, claim_id):

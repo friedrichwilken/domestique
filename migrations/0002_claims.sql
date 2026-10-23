@@ -3,6 +3,7 @@
 CREATE EXTENSION IF NOT EXISTS pgcrypto;  -- gen_random_uuid() on older builds
 
 CREATE TYPE source_layer AS ENUM ('observed', 'stated', 'prior');
+CREATE TYPE claim_horizon AS ENUM ('day', 'week', 'season');
 CREATE TYPE claim_status AS ENUM ('active', 'retired', 'candidate');
 CREATE TYPE evidence_kind AS ENUM
     ('activity', 'interval', 'wellness', 'statement', 'reference', 'query');
@@ -13,13 +14,21 @@ CREATE TABLE claims (
     athlete_id     text NOT NULL,
     text           text NOT NULL,
     source_layer   source_layer NOT NULL,
+    -- how long until predictions from this claim can be scored
+    horizon        claim_horizon NOT NULL,
     confidence     numeric(4, 3) NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
     status         claim_status NOT NULL DEFAULT 'candidate',
     created_at     timestamptz NOT NULL DEFAULT now(),
     last_tested_at timestamptz,
     created_by     text NOT NULL,
     -- consecutive confirmed predictions, used by the prior -> observed rule
-    hit_streak     integer NOT NULL DEFAULT 0 CHECK (hit_streak >= 0)
+    hit_streak     integer NOT NULL DEFAULT 0 CHECK (hit_streak >= 0),
+    -- scored predictions and hits, for the always-hit flag
+    scored         integer NOT NULL DEFAULT 0 CHECK (scored >= 0),
+    hits           integer NOT NULL DEFAULT 0 CHECK (hits >= 0 AND hits <= scored),
+    always_hit     boolean NOT NULL DEFAULT false,
+    CHECK (horizon <> 'week' OR confidence <= 0.7),
+    CHECK (horizon <> 'season' OR confidence <= 0.5)
 );
 CREATE INDEX claims_athlete_status_idx ON claims (athlete_id, status);
 

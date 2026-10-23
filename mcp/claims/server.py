@@ -69,15 +69,18 @@ def query_claims(
 
 @mcp.tool()
 def propose_claim(
-    athlete_id: str, text: str, source_layer: str, evidence: list[dict]
+    athlete_id: str, text: str, source_layer: str, horizon: str, evidence: list[dict]
 ) -> dict:
     """Propose a claim. Always created with status 'candidate'.
 
-    source_layer is observed, stated or prior; evidence is a list of
+    source_layer is observed, stated or prior. horizon is day, week or season
+    (how long until its predictions can be scored); a claim without one is
+    rejected. Season claims stay prior and are capped at 0.5. evidence is a list of
     {kind, ref, note?} with kind in activity, interval, wellness, statement,
     reference, query.
     """
-    return _plain(get_store().propose_claim(athlete_id, text, source_layer, evidence, AGENT))
+    return _plain(get_store().propose_claim(
+        athlete_id, text, source_layer, horizon, evidence, AGENT))
 
 
 @mcp.tool()

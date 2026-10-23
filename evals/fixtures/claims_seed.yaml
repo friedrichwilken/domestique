@@ -3,6 +3,7 @@ athlete_id: athlete-synth-1
 claims:
   - text: "W/bpm at steady Z2 reads 5-10% higher outdoors than on the trainer."
     source_layer: observed
+    horizon: day
     confidence: 0.8
     evidence:
       - kind: query
@@ -10,6 +11,7 @@ claims:
         note: "12 matched Z2 rides, 6 each"
   - text: "Decoupling stays under 3% on 3h Z2 rides when fueled at 80 g/h or more."
     source_layer: observed
+    horizon: day
     confidence: 0.75
     evidence:
       - kind: activity
@@ -20,6 +22,7 @@ claims:
         note: "3h Z2, 2.1% decoupling"
   - text: "Next-morning HRV drops 8-12% after sessions with more than 20 min above threshold."
     source_layer: observed
+    horizon: day
     confidence: 0.7
     evidence:
       - kind: wellness
@@ -27,6 +30,7 @@ claims:
         note: "14 hard days vs 14 easy days"
   - text: "Cadence sags 4-6 rpm in the last hour of rides longer than 4h."
     source_layer: observed
+    horizon: day
     confidence: 0.65
     evidence:
       - kind: interval
@@ -34,6 +38,7 @@ claims:
         note: "hour 4 vs hour 1"
   - text: "Sleep duration falls about 40 min on nights after evening intensity."
     source_layer: observed
+    horizon: day
     confidence: 0.6
     evidence:
       - kind: query
@@ -41,6 +46,7 @@ claims:
         note: "9 evening-intensity nights"
   - text: "Left/right balance drifts from 50/50 to 47/53 during the third VO2 rep and later."
     source_layer: observed
+    horizon: day
     confidence: 0.55
     evidence:
       - kind: interval
@@ -48,6 +54,7 @@ claims:
         note: "L/R 47/53 at rep 3"
   - text: "Peak HR in 30/30 sessions runs 4 bpm lower when indoors with a fan than without."
     source_layer: observed
+    horizon: day
     confidence: 0.5
     evidence:
       - kind: query
@@ -55,6 +62,7 @@ claims:
         note: "5 sessions each condition"
   - text: "Stated: morning sessions are prescribed 10% easier than the same session in the evening."
     source_layer: stated
+    horizon: day
     confidence: 0.7
     evidence:
       - kind: statement
@@ -62,6 +70,7 @@ claims:
         note: "said in weekly call"
   - text: "Athlete: knee pain shows up when torque work is ridden below 70 rpm."
     source_layer: stated
+    horizon: day
     confidence: 0.7
     evidence:
       - kind: statement
@@ -69,6 +78,7 @@ claims:
         note: "free text after ride"
   - text: "Stated: Thursday group ride is planned around and counts as a short easy session."
     source_layer: stated
+    horizon: week
     confidence: 0.65
     evidence:
       - kind: statement
@@ -76,6 +86,7 @@ claims:
         note: "plan comment"
   - text: "Athlete: feels flat for two days after a night under 6 hours of sleep."
     source_layer: stated
+    horizon: day
     confidence: 0.6
     evidence:
       - kind: statement
@@ -83,6 +94,7 @@ claims:
         note: "post-ride answer"
   - text: "Athlete: cannot eat 3 hours before a morning ride; carb drink 30 min before is the routine."
     source_layer: stated
+    horizon: day
     confidence: 0.55
     evidence:
       - kind: statement
@@ -90,6 +102,7 @@ claims:
         note: "intake interview"
   - text: "Stated: rest days are an easy spin, never fully off."
     source_layer: stated
+    horizon: week
     confidence: 0.5
     evidence:
       - kind: statement
@@ -97,6 +110,7 @@ claims:
         note: "plan principle"
   - text: "Athlete: heat sessions are avoided on office days."
     source_layer: stated
+    horizon: week
     confidence: 0.45
     evidence:
       - kind: statement
@@ -104,6 +118,7 @@ claims:
         note: "constraint conversation"
   - text: "Fat oxidation peaks around 65-75% of max HR."
     source_layer: prior
+    horizon: day
     confidence: 0.5
     evidence:
       - kind: reference
@@ -111,6 +126,7 @@ claims:
         note: "textbook range"
   - text: "Carbohydrate intake of 90 g/h or more reduces late-ride power fade on rides over 4h."
     source_layer: prior
+    horizon: day
     confidence: 0.5
     evidence:
       - kind: reference
@@ -118,6 +134,7 @@ claims:
         note: "review article, synthetic citation"
   - text: "A 20 min test power times 0.95 estimates FTP."
     source_layer: prior
+    horizon: week
     confidence: 0.45
     evidence:
       - kind: reference
@@ -125,6 +142,7 @@ claims:
         note: "common protocol"
   - text: "HRV below 85% of the 7-day baseline predicts a poor response to intensity next day."
     source_layer: prior
+    horizon: day
     confidence: 0.4
     evidence:
       - kind: reference
@@ -132,6 +150,7 @@ claims:
         note: "consensus statement, synthetic"
   - text: "Heat acclimation of 10 days raises plasma volume and lowers HR at fixed power."
     source_layer: prior
+    horizon: week
     confidence: 0.4
     evidence:
       - kind: reference
@@ -139,8 +158,17 @@ claims:
         note: "review, synthetic"
   - text: "Cardiac drift of more than 5% at steady power signals the ride was above aerobic threshold."
     source_layer: prior
+    horizon: day
     confidence: 0.35
     evidence:
       - kind: reference
         ref: synthetic-ref-drift
         note: "textbook rule of thumb"
+  - text: "Twelve weeks of threshold work raise FTP more than twelve weeks of VO2 work."
+    source_layer: prior
+    horizon: season
+    confidence: 0.4
+    evidence:
+      - kind: reference
+        ref: synthetic-ref-block-response
+        note: "population-average training study, synthetic"

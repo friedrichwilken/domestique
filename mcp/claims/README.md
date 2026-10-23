@@ -7,7 +7,7 @@ Stdio MCP server over the claims store (`src/domestique/claims/store.py`).
 | Tool | Notes |
 |---|---|
 | `query_claims(athlete_id?, source_layer?, status?, text_contains?)` | read-only |
-| `propose_claim(athlete_id, text, source_layer, evidence[])` | always creates status `candidate` |
+| `propose_claim(athlete_id, text, source_layer, horizon, evidence[])` | always creates status `candidate` |
 | `attach_evidence(claim_id, kind, ref, note?)` | kinds: activity, interval, wellness, statement, reference, query |
 | `confirm_or_retire(claim_id, status, reason, human_token)` | human-gated, see below |
 
