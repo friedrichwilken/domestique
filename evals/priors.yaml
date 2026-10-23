@@ -5,8 +5,10 @@
 # predictor takes the higher confidence, so the loop decides which one this athlete follows.
 # Order matters on a tie: the predictor breaks confidence ties by claim id and the replay
 # numbers claims in file order, so a more specific claim is listed before a general one.
-# Ranges are kept narrow on purpose: a claim that hits more than 95% of the time is flagged
-# as uninformative and stops predicting.
+# Every applicable claim is predicted and scored (the losers as shadows), so a rival can take
+# over without the winner failing first. Ranges are sized to the expected noise: a claim
+# whose mean error stays under a third of its half-range is flagged uninformative, one that
+# hits under 60% of the time is flagged overconfident.
 athlete_id: textbook
 claims:
   - text: "Power inside a heart-rate band is stable from week to week: the mean of the last three rides in the band predicts the next within about 5%."

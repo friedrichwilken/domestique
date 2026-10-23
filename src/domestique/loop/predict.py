@@ -3,13 +3,18 @@
 ``predict`` is a pure function over the planned session, the claims, their
 bindings and the history before the session. For each metric:
 
-1. Only claims that are ``active`` and not flagged always-hit are eligible
-   (retired, candidate and flagged claims never feed a prediction).
-2. Of the eligible claims with a binding for the metric whose conditions match
-   the session (intensity, sport, local start hour), the one with the highest
-   source layer wins (observed > stated > prior), then the higher confidence.
-   The others are recorded in the basis as superseded. No applicable claim:
-   no prediction, and a gap names the metric and the reason.
+1. A claim *applies* when it is ``active`` and has a binding for the metric
+   whose conditions match the session (intensity, sport, local start hour).
+   Retired and candidate claims never feed a prediction.
+2. Every applicable claim gets its own prediction (shadow scoring: rivals are
+   scored too, so one can take over without the winner failing first). Of
+   those, the official one is picked by precedence: highest source layer
+   (observed > stated > prior), then higher confidence, then claim id. A claim
+   flagged uninformative is never official; it is still predicted as a shadow,
+   so its calibration keeps being measured. The official prediction lists the
+   shadows' claims in its basis as superseded. No applicable claim, or none
+   whose base value exists, or only uninformative ones: no official
+   prediction, and a gap names the metric and the reason.
 3. The base value comes from the data plane:
    - ``watts_at_hr``: mean power inside the session's target HR band (the
      description's %-of-max guidance times ``hr_max``) over the last
@@ -31,7 +36,7 @@ from __future__ import annotations
 import argparse
 import sys
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, time
 from statistics import median
 
@@ -64,8 +69,8 @@ _BASELINE_KEY = {Metric.HRV_NEXT_MORNING: "hrv", Metric.SLEEP_HOURS: "sleep_h"}
 
 
 def eligible(claim: Claim) -> bool:
-    """Active and not flagged as always-hit."""
-    return claim.status == Status.ACTIVE and not claim.always_hit
+    """May be the official source: active and not flagged uninformative."""
+    return claim.status == Status.ACTIVE and not claim.uninformative
 
 
 def _untimed(session: PlannedSession) -> bool:
@@ -103,25 +108,22 @@ def _rank(claim: Claim) -> tuple[int, float, str]:
     return (_LAYER_RANK[claim.source_layer], -claim.confidence, claim.id)
 
 
-def pick(
+def applicable(
     metric: Metric,
     session: PlannedSession,
     claims: Mapping[str, Claim],
     bindings: Sequence[Binding],
-) -> tuple[Binding, list[str]] | None:
-    """The winning binding for the metric and the claim ids it supersedes, or None."""
+) -> list[Binding]:
+    """Bindings of active claims for the metric that match the session, in precedence order."""
     usable = [
         b
         for b in bindings
         if b.metric == metric
         and b.claim_id in claims
-        and eligible(claims[b.claim_id])
+        and claims[b.claim_id].status == Status.ACTIVE
         and applies(b.when, session)
     ]
-    if not usable:
-        return None
-    usable.sort(key=lambda b: _rank(claims[b.claim_id]))
-    return usable[0], [b.claim_id for b in usable[1:]]
+    return sorted(usable, key=lambda b: _rank(claims[b.claim_id]))
 
 
 def target_hr_band(session: PlannedSession, hr_max: float | None) -> tuple[float, float] | str:
@@ -222,26 +224,57 @@ def shape(base: float, b: Binding) -> Shaped:
     return Shaped(round(expected, 2), round(expected - half, 2), round(expected + half, 2))
 
 
+def _claim_prediction(
+    metric: Metric, session: PlannedSession, history: History, binding: Binding
+) -> Prediction | str:
+    """One claim's prediction (as a shadow), or why its base value does not exist."""
+    found = base_value(metric, session, history, binding)
+    if isinstance(found, str):
+        return found
+    base, basis = found
+    s = shape(base, binding)
+    basis = {**basis, "base": round(base, 2)}
+    return Prediction(
+        session.id, metric, s.expected, s.low, s.high, (binding.claim_id,), basis, official=False
+    )
+
+
+def _mark_official(
+    made: Sequence[Prediction], claims: Mapping[str, Claim]
+) -> list[Prediction] | None:
+    """The predictions with the first eligible one (precedence order) marked official."""
+    winner = next((p for p in made if eligible(claims[p.claim_id])), None)
+    if winner is None:
+        return None
+    superseded = [p.claim_id for p in made if p is not winner]
+    basis = {**winner.basis, "superseded": superseded} if superseded else winner.basis
+    official = replace(winner, official=True, basis=basis)
+    return [official if p is winner else p for p in made]
+
+
 def _predict_metric(
     metric: Metric,
     session: PlannedSession,
     claims: Mapping[str, Claim],
     bindings: Sequence[Binding],
     history: History,
-) -> Prediction | Gap:
-    chosen = pick(metric, session, claims, bindings)
-    if chosen is None:
-        return Gap(session.id, metric, f"no active claim with a binding for {metric} applies")
-    binding, superseded = chosen
-    found = base_value(metric, session, history, binding)
-    if isinstance(found, str):
-        return Gap(session.id, metric, found)
-    base, basis = found
-    s = shape(base, binding)
-    basis = {**basis, "base": round(base, 2)}
-    if superseded:
-        basis["superseded"] = superseded
-    return Prediction(session.id, metric, s.expected, s.low, s.high, (binding.claim_id,), basis)
+) -> tuple[list[Prediction], Gap | None]:
+    usable = applicable(metric, session, claims, bindings)
+    if not usable:
+        return [], Gap(session.id, metric, f"no active claim with a binding for {metric} applies")
+    made: list[Prediction] = []
+    reasons: list[str] = []
+    for binding in usable:
+        result = _claim_prediction(metric, session, history, binding)
+        if isinstance(result, str):
+            reasons.append(result)
+        else:
+            made.append(result)
+    marked = _mark_official(made, claims)
+    if marked is not None:
+        return marked, None
+    reason = reasons[0] if reasons else "only claims flagged uninformative apply"
+    return made, Gap(session.id, metric, reason)
 
 
 def predict(
@@ -250,16 +283,15 @@ def predict(
     bindings: Sequence[Binding],
     history: History,
 ) -> PredictionSet:
-    """Predictions for every metric an applicable active claim informs; gaps for the rest."""
+    """One prediction per applicable claim and metric, one official each; gaps for the rest."""
     by_id = {c.id: c for c in claims}
     predictions: list[Prediction] = []
     gaps: list[Gap] = []
     for metric in Metric:
-        result = _predict_metric(metric, session, by_id, bindings, history)
-        if isinstance(result, Prediction):
-            predictions.append(result)
-        else:
-            gaps.append(result)
+        made, gap = _predict_metric(metric, session, by_id, bindings, history)
+        predictions.extend(made)
+        if gap is not None:
+            gaps.append(gap)
     return PredictionSet(tuple(predictions), tuple(gaps))
 
 
@@ -271,9 +303,10 @@ def describe(result: PredictionSet, saved: Sequence[Prediction]) -> str:
     lines = []
     for p in result.predictions:
         state = "recorded" if p.id in kept else "already recorded, first registration kept"
+        role = "official" if p.official else "shadow"
         lines.append(
-            f"session {p.planned_session_id} {p.metric}: {p.expected} [{p.low}, {p.high}] "
-            f"from claim(s) {', '.join(p.claim_ids)} ({state})"
+            f"session {p.planned_session_id} {p.metric} ({role}): {p.expected} "
+            f"[{p.low}, {p.high}] from claim {p.claim_id} ({state})"
         )
     lines.extend(
         f"session {g.planned_session_id} {g.metric}: no prediction, {g.reason}" for g in result.gaps

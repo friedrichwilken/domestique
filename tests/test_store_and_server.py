@@ -1,4 +1,5 @@
 import importlib.util
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -106,3 +107,19 @@ def test_confirm_disabled_when_env_unset(server, monkeypatch):
     c = server.propose_claim("a", "x", "prior", "day", [])
     with pytest.raises(server.HumanTokenError):
         server.confirm_or_retire(c["id"], "active", "r", "")
+
+
+def test_clear_flags_is_human_gated_and_starts_a_new_window(server, monkeypatch):
+    monkeypatch.setenv("DOMESTIQUE_HUMAN_TOKEN", "secret")
+    c = server.propose_claim("a", "x", "prior", "day", [])
+    store = server.get_store()
+    flagged = replace(
+        store.query_claims()[0], uninformative=True, overconfident=True, calib_scored=12
+    )
+    store.record_adjustment(flagged, "flagged", "test")
+    with pytest.raises(server.HumanTokenError):
+        server.clear_flags(c["id"], "range narrowed", "wrong")
+    assert server.query_claims()[0]["uninformative"] is True
+    out = server.clear_flags(c["id"], "range narrowed", "secret")
+    assert out["uninformative"] is False and out["overconfident"] is False
+    assert out["calib_scored"] == 0

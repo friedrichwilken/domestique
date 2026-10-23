@@ -1,7 +1,8 @@
 """Nightly scoring: fill outcomes for a session's predictions and move confidence.
 
 ``score`` is a pure function; ``apply`` writes its result through the stores.
-For each prediction of the session that has no outcome yet:
+For each prediction of the session that has no outcome yet, official and
+shadow alike:
 
 1. The actual comes from the data plane: mean watts inside the prediction's
    pre-registered HR band (``basis.hr_low``/``hr_high``) over the paired ride,
@@ -11,14 +12,18 @@ For each prediction of the session that has no outcome yet:
 2. The outcome records the actual and the signed error ``actual - expected``.
    It is a hit when ``low <= actual <= high``.
 3. Each cited claim moves by ``claims.rules.adjust_with_notes`` (hit +0.10,
-   miss -0.15, layer and horizon caps, promotion, retirement, always-hit flag;
-   the rule is documented there), applied in metric order so two predictions
-   citing one claim compound. The history row's reason names the prediction.
+   miss -0.15, layer and horizon caps, promotion, retirement, the
+   uninformative and overconfident flags fed by the absolute error and the
+   half-range; the rule is documented there), applied in metric order, the
+   official prediction first, so two predictions citing one claim compound.
+   Shadows move their claims exactly like the official one: that is how a
+   rival takes over. The history row's reason names the prediction.
 4. Overshoot: when plan-vs-execution flagged the session as ridden above its
    heart-rate guidance, the session as ridden is not the one predicted, so no
-   claim is adjusted, hit or miss. If any prediction missed, one question for
-   the athlete lists the misses next to the overshoot, so intent can be told
-   apart from physiology.
+   claim is adjusted, hit or miss. If any official prediction missed, one
+   question for the athlete lists those misses next to the overshoot, so
+   intent can be told apart from physiology. Shadows are not reported to the
+   athlete.
 
 Scored once: the store writes an outcome only if none exists, and adjustments
 and questions are applied only for outcomes this run wrote.
@@ -118,8 +123,9 @@ def actual_for(p: Prediction, actuals: Actuals) -> float | str:
 
 def _verdict(p: Prediction, o: Outcome) -> str:
     word = "hit" if p.hit(o.actual) else "miss"
+    role = "official" if p.official else "shadow"
     return (
-        f"prediction {p.id} ({p.metric}): {word}, actual {o.actual:g} "
+        f"prediction {p.id} ({p.metric}, {role}): {word}, actual {o.actual:g} "
         f"against {p.expected:g} [{p.low:g}, {p.high:g}]"
     )
 
@@ -131,7 +137,7 @@ def _adjust(p: Prediction, o: Outcome, current: dict[str, Claim]) -> list[Adjust
         claim = current.get(cid)
         if claim is None or claim.status == Status.RETIRED:
             continue
-        updated, notes = adjust_with_notes(claim, p.hit(o.actual))
+        updated, notes = adjust_with_notes(claim, p.hit(o.actual), abs(o.error), p.half_range)
         current[cid] = updated
         out.append(Adjustment(p.id, updated, _verdict(p, o), tuple(notes)))
     return out
@@ -222,7 +228,10 @@ def score(
     overshoot: Question | None,
 ) -> ScoreResult:
     """Score the session's unscored predictions; see the module docstring for the rule."""
-    todo = sorted((p for p in predictions if p.id not in scored_ids), key=lambda p: p.metric)
+    todo = sorted(
+        (p for p in predictions if p.id not in scored_ids),
+        key=lambda p: (p.metric, not p.official, p.claim_id),
+    )
     scored, pending = _measure(todo, actuals)
     adjustments: list[Adjustment] = []
     questions: list[DraftQuestion] = []
@@ -231,7 +240,7 @@ def score(
         for p, o in scored:
             adjustments.extend(_adjust(p, o, current))
     else:
-        misses = [(p, o) for p, o in scored if not p.hit(o.actual)]
+        misses = [(p, o) for p, o in scored if p.official and not p.hit(o.actual)]
         if misses:
             questions.append(overshoot_question(athlete_id, session, overshoot, misses))
     return ScoreResult(

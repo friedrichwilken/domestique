@@ -2,6 +2,7 @@
 
 import os
 import uuid
+from dataclasses import replace
 from datetime import date, datetime, timedelta
 
 import psycopg
@@ -155,9 +156,47 @@ def test_overshoot_miss_writes_a_question_and_leaves_the_claim(conn, athlete):
     assert saved == [("athlete", "prediction_loop.overshoot_miss")]
 
 
-def test_predictions_need_a_real_planned_session(conn):
+def test_predictions_need_a_real_planned_session(conn, athlete):
+    _, c = active_claim(conn, athlete)
     with pytest.raises(psycopg.errors.ForeignKeyViolation):
         conn.execute(
-            "INSERT INTO predictions (planned_session_id, metric, expected, low, high) "
-            "VALUES (-1, 'peak_hr', 150, 145, 155)"
+            "INSERT INTO predictions (planned_session_id, metric, claim_id, official, expected, "
+            "low, high) VALUES (-1, 'peak_hr', %s, true, 150, 145, 155)",
+            (c.id,),
         )
+
+
+def test_shadow_predictions_stored_with_one_official_per_metric(conn, athlete):
+    session = seed(conn, athlete, work_hr=125.0, max_hr=170)
+    claims, c = active_claim(conn, athlete, confidence=0.6)
+    rival = claims.confirm_or_retire(
+        claims.propose_claim(athlete, "rival", "observed", "day", [], "test", 0.4).id,
+        "active",
+        "test setup",
+        "human",
+    )
+    loop = PgLoopStore(conn)
+    loop.add_binding(Binding(c.id, Metric.PEAK_HR, offset=10, range_abs=4))
+    loop.add_binding(Binding(rival.id, Metric.PEAK_HR, offset=30, range_abs=4))
+    active = claims.query_claims(athlete_id=athlete, status="active")
+    history = load_history(conn, athlete, session, HR_MAX, {})
+    result = predict(session, active, loop.bindings(athlete), history)
+    assert len(loop.save_predictions(result.predictions)) == 2
+    listed = loop.predictions_for(session.id)
+    assert [(p.claim_id, p.official) for p in listed] == [(c.id, True), (rival.id, False)]
+    # the rival now outranks: re-predicting keeps the first official, adds nothing
+    boosted = [replace(x, confidence=0.9) if x.id == rival.id else x for x in active]
+    again = predict(session, boosted, loop.bindings(athlete), history)
+    assert loop.save_predictions(again.predictions) == []
+    with pytest.raises(psycopg.errors.UniqueViolation), conn.transaction():
+        conn.execute(
+            "UPDATE predictions SET official = true WHERE planned_session_id = %s",
+            (session.id,),
+        )
+    # peak 170: official (143 +/- 4) misses, the shadow (163 +/- 4) misses too; both scored
+    actuals = load_actuals(conn, athlete, session)
+    _, applied = score_session(athlete, session, loop, claims, actuals, None)
+    assert (applied.outcomes, applied.adjustments) == (2, 2)
+    after = {x.id: x for x in claims.query_claims(athlete_id=athlete)}
+    assert after[rival.id].scored == 1 and after[rival.id].calib_half_range == 4.0
+    assert after[c.id].calib_abs_error == 27.0

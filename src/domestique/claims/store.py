@@ -42,7 +42,13 @@ class Claim:
     hit_streak: int = 0
     scored: int = 0
     hits: int = 0
-    always_hit: bool = False
+    # calibration flags and window (claims.rules): sums since the last clear_flags
+    uninformative: bool = False
+    overconfident: bool = False
+    calib_scored: int = 0
+    calib_hits: int = 0
+    calib_abs_error: float = 0.0
+    calib_half_range: float = 0.0
     evidence: tuple[Evidence, ...] = ()
 
 
@@ -103,7 +109,7 @@ class ClaimsStore(Protocol):
         self, claim: Claim, reason: str, by: str, notes: Sequence[str] = ()
     ) -> Claim: ...
 
-    def clear_always_hit(self, claim_id: str, reason: str, by: str) -> Claim: ...
+    def clear_flags(self, claim_id: str, reason: str, by: str) -> Claim: ...
 
     def history(self, claim_id: str) -> list[HistoryRow]: ...
 
@@ -138,6 +144,9 @@ def _check_decision(status: str) -> Status:
     if s == Status.CANDIDATE:
         raise ValueError("confirm_or_retire takes 'active' or 'retired'")
     return s
+
+
+FLAGS_CLEARED = "calibration flags cleared, new calibration window"
 
 
 def _uuid() -> str:
@@ -238,10 +247,19 @@ class MemoryStore:
             self._log(c, note, by)
         return c
 
-    def clear_always_hit(self, claim_id: str, reason: str, by: str) -> Claim:
-        c = replace(self._get(claim_id), always_hit=False)
+    def clear_flags(self, claim_id: str, reason: str, by: str) -> Claim:
+        """Clear both calibration flags and start a new calibration window."""
+        c = replace(
+            self._get(claim_id),
+            uninformative=False,
+            overconfident=False,
+            calib_scored=0,
+            calib_hits=0,
+            calib_abs_error=0.0,
+            calib_half_range=0.0,
+        )
         self._claims[claim_id] = c
-        self._log(c, f"always-hit flag cleared: {reason}", by)
+        self._log(c, f"{FLAGS_CLEARED}: {reason}", by)
         return c
 
     def history(self, claim_id: str) -> list[HistoryRow]:
@@ -250,7 +268,8 @@ class MemoryStore:
 
 _COLS = (
     "id, athlete_id, text, source_layer, confidence, status, created_by, created_at, "
-    "last_tested_at, hit_streak, horizon, scored, hits, always_hit"
+    "last_tested_at, hit_streak, horizon, scored, hits, uninformative, overconfident, "
+    "calib_scored, calib_hits, calib_abs_error, calib_half_range"
 )
 
 
@@ -289,7 +308,12 @@ class PgStore:
             horizon=Horizon(r[10]),
             scored=r[11],
             hits=r[12],
-            always_hit=r[13],
+            uninformative=r[13],
+            overconfident=r[14],
+            calib_scored=r[15],
+            calib_hits=r[16],
+            calib_abs_error=float(r[17]),
+            calib_half_range=float(r[18]),
             evidence=tuple(evidence),
         )
 
@@ -397,8 +421,9 @@ class PgStore:
             self._get(cur, claim.id)
             cur.execute(
                 "UPDATE claims SET confidence = %s, status = %s, source_layer = %s, "
-                "hit_streak = %s, scored = %s, hits = %s, always_hit = %s, "
-                "last_tested_at = now() WHERE id = %s",
+                "hit_streak = %s, scored = %s, hits = %s, uninformative = %s, "
+                "overconfident = %s, calib_scored = %s, calib_hits = %s, calib_abs_error = %s, "
+                "calib_half_range = %s, last_tested_at = now() WHERE id = %s",
                 (
                     claim.confidence,
                     claim.status.value,
@@ -406,7 +431,12 @@ class PgStore:
                     claim.hit_streak,
                     claim.scored,
                     claim.hits,
-                    claim.always_hit,
+                    claim.uninformative,
+                    claim.overconfident,
+                    claim.calib_scored,
+                    claim.calib_hits,
+                    claim.calib_abs_error,
+                    claim.calib_half_range,
                     claim.id,
                 ),
             )
@@ -416,12 +446,18 @@ class PgStore:
                 self._log(cur, c, note, by)
             return c
 
-    def clear_always_hit(self, claim_id: str, reason: str, by: str) -> Claim:
+    def clear_flags(self, claim_id: str, reason: str, by: str) -> Claim:
+        """Clear both calibration flags and start a new calibration window."""
         with self.conn.transaction(), self.conn.cursor() as cur:
             self._get(cur, claim_id)
-            cur.execute("UPDATE claims SET always_hit = false WHERE id = %s", (claim_id,))
+            cur.execute(
+                "UPDATE claims SET uninformative = false, overconfident = false, "
+                "calib_scored = 0, calib_hits = 0, calib_abs_error = 0, calib_half_range = 0 "
+                "WHERE id = %s",
+                (claim_id,),
+            )
             c = self._get(cur, claim_id)
-            self._log(cur, c, f"always-hit flag cleared: {reason}", by)
+            self._log(cur, c, f"{FLAGS_CLEARED}: {reason}", by)
             return c
 
     def history(self, claim_id: str) -> list[HistoryRow]:

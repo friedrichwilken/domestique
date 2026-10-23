@@ -8,10 +8,11 @@ an entry they accept is proposed through the claims MCP (``propose_claim``,
 
 Two kinds of entries, each with horizon, hit rate, confidence and evidence:
 
-- **tested prior**: every seeded prior that was scored at least once, in the
-  state the loop left it: ``promote`` (it was promoted to ``observed`` on this
-  athlete), ``retire`` (it missed until retired) or ``keep`` (still a prior).
-  Hit rate is the replay's.
+- **tested prior**: every seeded prior that was scored at least once
+  (official or shadow), in the state the loop left it: ``promote`` (it was
+  promoted to ``observed`` on this athlete), ``retire`` (it missed until
+  retired) or ``keep`` (still a prior). Hit rate is the replay's; its notes
+  name the uninformative and overconfident flags.
 - **pattern**: an ``observed`` candidate proposed from what the scorer saw. For
   each metric and session bucket (hard or easy by planned IF, evening or not by
   local start), when at least ``PATTERN_MIN_N`` predictions missed consistently
@@ -143,8 +144,18 @@ def _proposal(c: Claim) -> str:
 
 def _prior_entry(c: Claim, bindings: Sequence[Binding], rows: Sequence[Scored]) -> ReviewEntry:
     notes = []
-    if c.always_hit:
-        notes.append("always-hit flag: its ranges hit too often to mean anything; narrow them")
+    if c.uninformative:
+        notes.append(
+            "uninformative flag: its errors stay well inside its range; "
+            "narrow the range so a hit means something"
+        )
+    if c.overconfident:
+        notes.append("overconfident flag: it hits under 60% of the time; widen the range")
+    if len({b.metric for b in bindings}) > 1:
+        notes.append(
+            "bound to more than one metric: calibration flags are per claim, "
+            "so they mix the metrics; split it into one claim per metric"
+        )
     references: tuple[EvidenceInput, ...] = tuple(
         {"kind": e.kind, "ref": e.ref, "note": e.note} for e in c.evidence
     )
@@ -170,7 +181,10 @@ def tested_priors(result: RunResult) -> list[ReviewEntry]:
     for c in result.claims:
         if c.id not in result.seeded or c.scored == 0:
             continue
-        rows = [s for s in result.scored if c.id in s.prediction.claim_ids]
+        rows = sorted(
+            (s for s in (*result.scored, *result.shadow_scored) if c.id in s.prediction.claim_ids),
+            key=lambda s: s.session.date,
+        )
         out.append(_prior_entry(c, result.seeded[c.id], rows))
     return out
 

@@ -8,7 +8,9 @@ For each day D of the season, with the cursor at D:
    run; with the loop off, outcomes are written but no claim's confidence moves.
 2. Predict the sessions planned on D with ``loop.predict.predict``, from the
    history the view allows: earlier rides of the session's sport family and
-   the recent nights.
+   the recent nights. Every applicable claim is predicted; the official
+   predictions are what the report measures, the shadows are scored too and
+   kept apart (``RunResult.shadow_scored``).
 
 After the last day the cursor moves one more day so the last sessions are
 scored. Claims and predictions live in in-memory stores seeded from a priors
@@ -86,10 +88,12 @@ class RunResult:
     last: date
     loop_on: bool
     seeded: dict[str, tuple[Binding, ...]] = field(default_factory=dict)  # claim id -> bindings
-    scored: list[Scored] = field(default_factory=list)
+    scored: list[Scored] = field(default_factory=list)  # official predictions
+    shadow_scored: list[Scored] = field(default_factory=list)
     gaps: Counter[tuple[Metric, str]] = field(default_factory=Counter)
     pending: Counter[tuple[Metric, str]] = field(default_factory=Counter)
-    predictions: int = 0
+    predictions: int = 0  # official
+    shadows: int = 0
     sessions: int = 0
     questions: list[Question] = field(default_factory=list)
     claims: list[Claim] = field(default_factory=list)  # final state of the working store
@@ -171,7 +175,9 @@ class Replay:
             self.result.sessions += 1
             active = self.claims.query_claims(athlete_id=who, status="active")
             out = predict(session, active, self.loop.bindings(who), history_for(view, session))
-            self.result.predictions += len(self.loop.save_predictions(out.predictions))
+            saved = self.loop.save_predictions(out.predictions)
+            self.result.predictions += sum(1 for p in saved if p.official)
+            self.result.shadows += sum(1 for p in saved if not p.official)
             self.result.gaps.update((g.metric, g.reason) for g in out.gaps)
 
     def score_day(self, view: CursorView, day: date) -> None:
@@ -193,15 +199,10 @@ class Replay:
             apply(result, self.loop, self.claims, by=REPLAY_BY)
             self.result.pending.update((p.metric, p.reason) for p in result.pending)
             by_id = {p.id: p for p in predictions}
-            self.result.scored.extend(
-                Scored(
-                    session,
-                    by_id[o.prediction_id],
-                    o,
-                    evidence_for(by_id[o.prediction_id], session, actuals),
-                )
-                for o in result.outcomes
-            )
+            for o in result.outcomes:
+                p = by_id[o.prediction_id]
+                rows = self.result.scored if p.official else self.result.shadow_scored
+                rows.append(Scored(session, p, o, evidence_for(p, session, actuals)))
 
     def run(self) -> RunResult:
         day = self.result.first
