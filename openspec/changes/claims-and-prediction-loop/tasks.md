@@ -17,9 +17,9 @@
 
 ## 3. Loop
 
-- [ ] 3.1 Rule-based `predict(planned_session)` producing cited predictions with ranges; test: no-claim metric yields no prediction and a reported gap
-- [ ] 3.2 `score(session)` nightly job writing outcomes once and applying the confidence rule; test: scored-once and miss-lowers-confidence scenarios
-- [ ] 3.3 Overshoot-miss path creating a question for the athlete and leaving claims unchanged; test: overshoot scenario
+- [x] 3.1 Rule-based `predict(planned_session)` producing cited predictions with ranges; test: no-claim metric yields no prediction and a reported gap
+- [x] 3.2 `score(session)` nightly job writing outcomes once and applying the confidence rule; test: scored-once and miss-lowers-confidence scenarios
+- [x] 3.3 Overshoot-miss path creating a question for the athlete and leaving claims unchanged; test: overshoot scenario
 
 ## 4. Seed
 
