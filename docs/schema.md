@@ -35,3 +35,30 @@ unit-tested against fixture rides.
 
 Files in `$DOMESTIQUE_HOME/intent/*.yaml` on the athlete's machine, loaded read-only at run time. Overrides are
 appended by the system with the prediction they overruled.
+
+## Nutrition and comments
+
+Migration `0003_nutrition_and_comments.sql` (change `comments-and-nutrition`).
+Absent upstream values stay NULL, never zero.
+
+- `activities` gains `kcal` (energy expended, `calories`), `carbs_used_g`
+  (`carbs_used`) and `carbs_ingested_g` (`carbs_ingested`), all as the
+  platform reports them.
+- `wellness` gains `kcal_consumed` (`kcalConsumed`), `carbs_g`
+  (`carbohydrates`), `protein_g` (`protein`), `fat_g` (`fatTotal`),
+  `hydration_ml` (`hydrationVolume`) and `hydration` (the rating).
+- Activity comments go into the existing `subjective` table, one row per
+  upstream comment, which gains `source, external_id, author_id, author_name,
+  start_index, end_index, deleted, is_system`, unique on
+  `(athlete_id, source, external_id)` so edits update in place. The comment
+  text is stored unmodified in `answer`; `tags` holds `comment`, plus `fuel`
+  when it carries a `#fuel` line or `system` when the system wrote it.
+  `start_index`/`end_index` are the stream indices the comment is pinned to.
+- `activity_intake(activity_id, fluid_ml, carbs_g, kcal, platform_carbs_g,
+  carbs_differ, comment_external_id, updated_at)`: the ride's intake from the
+  latest live athlete comment with a `#fuel` tag. The tag's carbohydrate wins;
+  the platform's value at reconcile time stays in `platform_carbs_g` and
+  `carbs_differ` flags a disagreement. No tag, no row.
+- View `activity_nutrition`: per activity, energy expended, carbohydrate used,
+  effective carbohydrate ingested with `carbs_source` (`tag` or `platform`),
+  the platform value, fluid and energy ingested.
