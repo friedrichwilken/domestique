@@ -1,4 +1,7 @@
 # Synthetic athlete 'athlete-synth-1'. No real athlete data. Task 003 seed.
+# Bindings (docs/schema.md, claim_bindings) only where a claim maps honestly onto one of
+# the four predicted metrics with the conditions a binding can express (planned IF,
+# sport family, local start hour). Everything else stays unbound and feeds no prediction.
 athlete_id: athlete-synth-1
 claims:
   - text: "W/bpm at steady Z2 reads 5-10% higher outdoors than on the trainer."
@@ -28,6 +31,12 @@ claims:
       - kind: wellness
         ref: synthetic-wellness-window-03
         note: "14 hard days vs 14 easy days"
+    bindings:
+      # "more than 20 min above threshold" is not a planned-session field; planned IF of
+      # 0.85 or more is the closest condition a binding can express.
+      - metric: hrv_next_morning
+        params: {change_pct: -10, range_pct: 2.2}
+        conditions: {min_if: 0.85}
   - text: "Cadence sags 4-6 rpm in the last hour of rides longer than 4h."
     source_layer: observed
     horizon: day
@@ -44,6 +53,11 @@ claims:
       - kind: query
         ref: sleep_after_evening_intensity
         note: "9 evening-intensity nights"
+    bindings:
+      # about 40 min = -0.67 h; evening = local start 17:00-23:00; intensity = planned IF >= 0.85
+      - metric: sleep_hours
+        params: {offset: -0.67, range_abs: 0.33}
+        conditions: {min_if: 0.85, start_hour_from: 17, start_hour_to: 23}
   - text: "Left/right balance drifts from 50/50 to 47/53 during the third VO2 rep and later."
     source_layer: observed
     horizon: day

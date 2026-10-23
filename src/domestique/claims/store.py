@@ -7,7 +7,7 @@ Every state change appends a claim_history row (never updated or deleted).
 from __future__ import annotations
 
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any, NotRequired, Protocol, TypedDict
@@ -140,12 +140,21 @@ def _check_decision(status: str) -> Status:
     return s
 
 
-class MemoryStore:
-    """In-memory implementation used by tests and the replay harness."""
+def _uuid() -> str:
+    return str(uuid.uuid4())
 
-    def __init__(self) -> None:
+
+class MemoryStore:
+    """In-memory implementation used by tests and the replay harness.
+
+    ``new_id`` makes claim ids: random by default; the replay passes a counter so
+    that a run is reproducible (the predictor breaks confidence ties by claim id).
+    """
+
+    def __init__(self, new_id: Callable[[], str] = _uuid) -> None:
         self._claims: dict[str, Claim] = {}
         self._history: list[HistoryRow] = []
+        self._new_id = new_id
 
     def _log(self, c: Claim, reason: str, by: str) -> None:
         self._history.append(
@@ -180,7 +189,7 @@ class MemoryStore:
     ) -> Claim:
         _validate_proposal(text, source_layer, horizon, evidence, confidence)
         c = Claim(
-            id=str(uuid.uuid4()),
+            id=self._new_id(),
             athlete_id=athlete_id,
             text=text,
             source_layer=SourceLayer(source_layer),

@@ -10,7 +10,8 @@
 - **Derived metrics**: pure functions in `src/domestique/metrics/`, SQL
   views for the cheap ones. No model in this path.
 - **Claims MCP** (`mcp/claims/`): `query_claims`, `propose_claim`,
-  `attach_evidence`, `confirm_or_retire` (human-gated).
+  `attach_evidence`, `add_binding` (human-gated unless the claim is a
+  candidate), `confirm_or_retire` (human-gated).
 - **Rails**: `src/domestique/rails/`, pure Python rules with tests,
   evaluated before any session is emitted.
 - **Planner**: `src/domestique/planner/`, templates + session library +

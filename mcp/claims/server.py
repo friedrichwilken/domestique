@@ -1,8 +1,9 @@
 """Claims MCP server (stdio).
 
-Tools: query_claims, propose_claim, attach_evidence, confirm_or_retire.
+Tools: query_claims, propose_claim, attach_evidence, add_binding, confirm_or_retire.
 confirm_or_retire is human-gated: it refuses unless ``human_token`` equals the
-DOMESTIQUE_HUMAN_TOKEN environment variable. Storage: Postgres via
+DOMESTIQUE_HUMAN_TOKEN environment variable. add_binding is gated the same way
+unless the claim is still a candidate. Storage: Postgres via
 DOMESTIQUE_DATABASE_URL. See README.md.
 """
 
@@ -16,7 +17,17 @@ from typing import Any
 import psycopg
 from mcp.server.fastmcp import FastMCP
 
-from domestique.claims.store import Claim, ClaimsStore, Evidence, EvidenceInput, PgStore
+from domestique.claims.rules import Status
+from domestique.claims.store import (
+    Claim,
+    ClaimNotFoundError,
+    ClaimsStore,
+    Evidence,
+    EvidenceInput,
+    PgStore,
+)
+from domestique.loop.model import binding_params, conditions_json, parse_binding
+from domestique.loop.store import LoopStore, PgLoopStore
 
 mcp = FastMCP("domestique-claims")
 AGENT = "agent:claims-mcp"
@@ -27,33 +38,46 @@ class HumanTokenError(PermissionError):
 
 
 class _StoreHolder:
-    """The process-wide store: created lazily from the environment, replaceable for tests."""
+    """The process-wide stores: created lazily from the environment, replaceable for tests."""
 
     store: ClaimsStore | None = None
+    loop: LoopStore | None = None
+    conn: psycopg.Connection[tuple[Any, ...]] | None = None
 
 
 _holder = _StoreHolder()
 
 
-def require_human(token: str | None) -> None:
+def require_human(token: str | None, tool: str = "confirm_or_retire") -> None:
     expected = os.environ.get("DOMESTIQUE_HUMAN_TOKEN", "")
     if not expected:
-        raise HumanTokenError("DOMESTIQUE_HUMAN_TOKEN is not set; confirm_or_retire is disabled")
+        raise HumanTokenError(f"DOMESTIQUE_HUMAN_TOKEN is not set; {tool} is disabled")
     if not token or not hmac.compare_digest(token.encode(), expected.encode()):
-        raise HumanTokenError("a valid human token is required for confirm_or_retire")
+        raise HumanTokenError(f"a valid human token is required for {tool}")
+
+
+def _conn() -> psycopg.Connection[tuple[Any, ...]]:
+    if _holder.conn is None:
+        _holder.conn = psycopg.connect(os.environ["DOMESTIQUE_DATABASE_URL"], autocommit=True)
+    return _holder.conn
 
 
 def get_store() -> ClaimsStore:
     if _holder.store is None:
-        _holder.store = PgStore(
-            psycopg.connect(os.environ["DOMESTIQUE_DATABASE_URL"], autocommit=True)
-        )
+        _holder.store = PgStore(_conn())
     return _holder.store
 
 
-def set_store(store: ClaimsStore) -> None:
-    """Inject a store (tests)."""
+def get_loop_store() -> LoopStore:
+    if _holder.loop is None:
+        _holder.loop = PgLoopStore(_conn())
+    return _holder.loop
+
+
+def set_store(store: ClaimsStore, loop: LoopStore | None = None) -> None:
+    """Inject stores (tests)."""
     _holder.store = store
+    _holder.loop = loop
 
 
 def _plain(obj: Claim | Evidence) -> dict[str, Any]:
@@ -103,6 +127,44 @@ def propose_claim(
 def attach_evidence(claim_id: str, kind: str, ref: str, note: str | None = None) -> dict[str, Any]:
     """Attach one evidence entry to an existing claim."""
     return _plain(get_store().attach_evidence(claim_id, kind, ref, note))
+
+
+def _claim(claim_id: str) -> Claim:
+    for c in get_store().query_claims():
+        if c.id == claim_id:
+            return c
+    raise ClaimNotFoundError(claim_id)
+
+
+@mcp.tool()
+def add_binding(
+    claim_id: str,
+    metric: str,
+    params: dict[str, Any],
+    conditions: dict[str, Any] | None = None,
+    human_token: str | None = None,
+) -> dict[str, Any]:
+    """Bind a claim to one predicted metric, so the claim can feed predictions.
+
+    metric is watts_at_hr, peak_hr, hrv_next_morning or sleep_hours. params:
+    change_pct, offset, range_pct, range_abs (a range is required), rides
+    (watts_at_hr only). expected = base * (1 + change_pct/100) + offset, range
+    expected -/+ (expected * range_pct/100 + range_abs). conditions (all
+    optional): min_if, max_if, sports, start_hour_from, start_hour_to.
+    Replaces an existing binding for the same claim and metric. Free for a
+    candidate claim; on an active or retired claim it changes what the athlete
+    model predicts, so it needs the human token.
+    """
+    binding = parse_binding(claim_id, metric, params, conditions or {})
+    if _claim(claim_id).status != Status.CANDIDATE:
+        require_human(human_token, "add_binding on a claim that is not a candidate")
+    get_loop_store().add_binding(binding)
+    return {
+        "claim_id": binding.claim_id,
+        "metric": binding.metric.value,
+        "params": binding_params(binding),
+        "conditions": conditions_json(binding.when),
+    }
 
 
 @mcp.tool()
