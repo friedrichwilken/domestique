@@ -13,10 +13,22 @@ from domestique.claims.rules import (
 from domestique.claims.store import Claim, MemoryStore
 
 
-def mk(layer=SourceLayer.OBSERVED, conf=0.5, status=Status.ACTIVE, streak=0,
-       horizon=Horizon.DAY, **kw):
-    return Claim("c1", "a", "t", layer, horizon, conf, status, "x", datetime.now(UTC),
-                 hit_streak=streak, **kw)
+def mk(
+    layer=SourceLayer.OBSERVED, conf=0.5, status=Status.ACTIVE, streak=0, horizon=Horizon.DAY, **kw
+):
+    return Claim(
+        "c1",
+        "a",
+        "t",
+        layer,
+        horizon,
+        conf,
+        status,
+        "x",
+        datetime.now(UTC),
+        hit_streak=streak,
+        **kw,
+    )
 
 
 def test_hit_raises_and_caps():

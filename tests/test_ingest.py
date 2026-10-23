@@ -4,6 +4,7 @@ from datetime import date, datetime
 import httpx
 import pytest
 
+from domestique import db
 from domestique.ingest import icu, icu_client
 
 ACTIVITY = {
@@ -102,14 +103,13 @@ def test_client_paths_and_auth():
 def test_api_key_missing(monkeypatch, tmp_path):
     monkeypatch.delenv("ICU_API_KEY", raising=False)
     monkeypatch.setenv("HOME", str(tmp_path))
-    with pytest.raises(icu_client.MissingCredentials):
+    with pytest.raises(icu_client.MissingCredentialsError):
         icu_client.get_api_key()
 
 
 @pytest.mark.skipif(not os.environ.get("DOMESTIQUE_TEST_DSN"), reason="needs a Postgres DSN")
 def test_ingest_is_idempotent(intervals):
     """Integration: set DOMESTIQUE_TEST_DSN to a scratch TimescaleDB database."""
-    from domestique import db
 
     def handler(request: httpx.Request) -> httpx.Response:
         p = request.url.path

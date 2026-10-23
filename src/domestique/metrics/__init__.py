@@ -13,8 +13,11 @@ from domestique.metrics.efficiency import (
     watts_at_hr_band,
 )
 from domestique.metrics.timing import hours_before_bed
+from domestique.metrics.types import Interval, Sample
 
 __all__ = [
+    "Interval",
+    "Sample",
     "decoupling_pct",
     "efficiency_factor",
     "hours_before_bed",
