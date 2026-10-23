@@ -14,13 +14,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from collections.abc import Mapping, Sequence
 from datetime import UTC, date, datetime
 from typing import Any, TypedDict
 
 import psycopg
 
-from domestique import db
+from domestique import config, db
 from domestique.ingest import icu_client
 from domestique.ingest.icu_client import IcuPayload
 from domestique.metrics import (
@@ -61,6 +62,9 @@ ActivityRow = TypedDict(
         "ef": float | None,
         "decoupling": float | None,
         "lr_balance": float | None,
+        "kcal": float | None,
+        "carbs_used_g": float | None,
+        "carbs_ingested_g": float | None,
         "raw": str,
     },
 )
@@ -88,6 +92,12 @@ class WellnessRow(TypedDict):
     weight: float | None
     ctl: float | None
     atl: float | None
+    kcal_consumed: float | None
+    carbs_g: float | None
+    protein_g: float | None
+    fat_g: float | None
+    hydration_ml: float | None
+    hydration: float | None
     source: str
     raw: str
 
@@ -150,6 +160,9 @@ def map_activity(
         "ef": a.get("icu_efficiency_factor"),
         "decoupling": a.get("decoupling"),
         "lr_balance": a.get("avg_lr_balance"),
+        "kcal": a.get("calories"),
+        "carbs_used_g": a.get("carbs_used"),
+        "carbs_ingested_g": a.get("carbs_ingested"),
         "raw": json.dumps(a),
     }
     if samples:
@@ -215,6 +228,12 @@ def map_wellness(w: IcuPayload, athlete_id: str) -> WellnessRow:
         "weight": w.get("weight"),
         "ctl": w.get("ctl"),
         "atl": w.get("atl"),
+        "kcal_consumed": w.get("kcalConsumed"),
+        "carbs_g": w.get("carbohydrates"),
+        "protein_g": w.get("protein"),
+        "fat_g": w.get("fatTotal"),
+        "hydration_ml": w.get("hydrationVolume"),
+        "hydration": w.get("hydration"),
         "source": SOURCE,
         "raw": json.dumps(w),
     }
@@ -353,6 +372,22 @@ def ingest(
     return {"activities": n_act, "wellness": n_well}
 
 
+def cli_settings(env: Mapping[str, str] | None = None) -> tuple[str, str | None]:
+    """Athlete id and database URL for the CLIs: config.yaml, overridden by the environment.
+
+    ``ICU_ATHLETE_ID`` and ``DOMESTIQUE_DSN`` win over ``athlete_id`` and
+    ``database_url`` in the config; the config is only required when the
+    environment does not supply both.
+    """
+    source: Mapping[str, str] = os.environ if env is None else env
+    athlete_id = source.get("ICU_ATHLETE_ID", "").strip()
+    dsn = source.get("DOMESTIQUE_DSN", "").strip()
+    if athlete_id and dsn:
+        return athlete_id, dsn
+    cfg = config.load(source)
+    return athlete_id or cfg.athlete_id, dsn or cfg.database_url
+
+
 def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(description="Ingest intervals.icu into the data plane.")
     p.add_argument("--from", dest="oldest", required=True, type=date.fromisoformat)
@@ -360,11 +395,12 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--no-streams", action="store_true", help="skip per-second streams")
     args = p.parse_args(argv)
 
-    with db.connect() as conn:
+    athlete_id, dsn = cli_settings()
+    with db.connect(dsn) as conn:
         applied = db.migrate(conn)
         if applied:
             print("applied migrations:", ", ".join(applied))
-        client = icu_client.IcuClient(icu_client.get_athlete_id(), icu_client.make_client())
+        client = icu_client.IcuClient(athlete_id, icu_client.make_client())
         counts = ingest(conn, client, args.oldest, args.newest, with_streams=not args.no_streams)
     print(f"ingested {counts['activities']} activities, {counts['wellness']} wellness days")
 

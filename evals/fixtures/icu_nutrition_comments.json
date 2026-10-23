@@ -1,0 +1,59 @@
+{
+  "activity_no_intake": {
+    "id": "i2001",
+    "start_date_local": "2026-09-10T08:00:00",
+    "start_date": "2026-09-10T06:00:00Z",
+    "type": "Ride",
+    "name": "synthetic long ride",
+    "moving_time": 14400,
+    "calories": 3100,
+    "carbs_used": 520
+  },
+  "activity_platform_carbs": {
+    "id": "i2002",
+    "start_date_local": "2026-09-11T08:00:00",
+    "start_date": "2026-09-11T06:00:00Z",
+    "type": "Ride",
+    "name": "synthetic fuelled ride",
+    "moving_time": 10800,
+    "calories": 2400,
+    "carbs_used": 400,
+    "carbs_ingested": 60
+  },
+  "wellness": {
+    "id": "2026-09-10",
+    "hrv": 80,
+    "kcalConsumed": 3600,
+    "carbohydrates": 520,
+    "protein": 140,
+    "fatTotal": 90,
+    "hydrationVolume": 3200,
+    "hydration": 3
+  },
+  "messages": [
+    {
+      "id": 501,
+      "athlete_id": "i000000",
+      "name": "Synthetic Athlete",
+      "created": "2026-09-11T12:00:00Z",
+      "type": "TEXT",
+      "content": "Felt fine.\n#fuel 2 bottles 90g",
+      "activity_id": "i2002",
+      "start_index": null,
+      "end_index": null,
+      "deleted": false
+    },
+    {
+      "id": 502,
+      "athlete_id": "i000000",
+      "name": "Synthetic Athlete",
+      "created": "2026-09-11T12:05:00Z",
+      "type": "TEXT",
+      "content": "Legs heavy on this climb",
+      "activity_id": "i2002",
+      "start_index": 3600,
+      "end_index": 4200,
+      "deleted": false
+    }
+  ]
+}
