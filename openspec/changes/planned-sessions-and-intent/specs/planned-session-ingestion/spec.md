@@ -6,7 +6,7 @@ Prescribed sessions are stored separately from executed ones and paired to them,
 ## ADDED Requirements
 
 ### Requirement: Planned sessions are ingested with their structure
-The system SHALL ingest planned sessions from TrainingPeaks with date, title, description, structured steps, planned load and planned intensity, keyed by source and external id, idempotently.
+The system SHALL ingest planned sessions from the intervals.icu events API with date, title, description, structured steps, planned load and planned intensity, keyed by source and external id, idempotently.
 
 #### Scenario: Two sessions on one day
 - **WHEN** a day has two planned sessions with the same title

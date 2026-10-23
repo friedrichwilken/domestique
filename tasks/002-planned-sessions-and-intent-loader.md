@@ -1,12 +1,12 @@
-# 002 — planned sessions from TrainingPeaks and the intent loader
+# 002 — planned sessions from intervals.icu and the intent loader
 
 **Depends on:** 001. **Blocks:** 003.
 
 ## Deliverables
 
-1. `src/domestique/ingest/tp.py`: planned sessions (title, description,
+1. `src/domestique/ingest/icu_plan.py`: planned sessions (title, description,
    structure JSON, planned TSS/IF) into `planned_sessions`. Thin client over the
-   TrainingPeaks API. Pair with executed activities by date
+   intervals.icu events API (category WORKOUT). Pair with executed activities by date
    and sport; store the pairing.
 2. `src/domestique/intent/`: loader for `$DOMESTIQUE_HOME/intent/*.yaml` with schema
    validation; `rails` evaluated as pure functions over a day's data

@@ -14,7 +14,7 @@ exist.
 
 ## What stays human
 
-- Nothing writes a plan to TrainingPeaks without a human approving it.
+- Nothing writes a plan to the training platform without a human approving it.
 - Pain, illness, injury: rails stop the plan and produce referral wording,
   never advice.
 - The intent behind a prescribed session is asked, never inferred from workout text.
@@ -32,7 +32,8 @@ exist.
 
 Python 3.12, Postgres + TimescaleDB, Anthropic SDK (`claude-opus-5-5` for
 reasoning steps, cheaper model for summaries), MCP servers for
-TrainingPeaks, intervals.icu and the claims store. Details in
+intervals.icu and the claims store (intervals.icu is the only
+external platform for now; it holds both planned and executed sessions). Details in
 [docs/stack.md](docs/stack.md).
 
 ## Athlete data and configuration

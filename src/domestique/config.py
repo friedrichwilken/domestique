@@ -25,7 +25,6 @@ DEFAULT_HOME = Path("~/.config/domestique")
 class Config:
     home: Path
     athlete_id: str
-    tp_athlete_id: str | None
     timezone: str
     bedtime: str
     hr_max: int | None
@@ -56,7 +55,6 @@ def load(env: dict[str, str] | None = None) -> Config:
     return Config(
         home=home,
         athlete_id=str(raw["athlete_id"]),
-        tp_athlete_id=str(raw["tp_athlete_id"]) if raw.get("tp_athlete_id") else None,
         timezone=str(raw["timezone"]),
         bedtime=str(raw["bedtime"]),
         hr_max=int(raw["hr_max"]) if raw.get("hr_max") else None,

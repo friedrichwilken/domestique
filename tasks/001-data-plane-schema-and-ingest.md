@@ -24,4 +24,4 @@ tables with tests before any model touches it.
 
 ## Not in scope
 
-TrainingPeaks ingestion (002), streams beyond what the metrics need.
+Planned-session ingestion (002), streams beyond what the metrics need.

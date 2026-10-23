@@ -3,9 +3,10 @@
 - **Language**: Python 3.12, `uv`, `ruff`, `pytest`.
 - **Store**: Postgres 16 + TimescaleDB. Migrations in `migrations/` (plain
   SQL, numbered).
-- **Ingestion**: one worker per source (intervals.icu, TrainingPeaks,
+- **Ingestion**: intervals.icu only for now (executed activities, planned
+  workouts from its events API,
   wellness via intervals.icu), run as CronJobs. Thin clients over the
-  public intervals.icu and TrainingPeaks APIs.
+  public intervals.icu API. Other platforms are a later change.
 - **Derived metrics**: pure functions in `src/domestique/metrics/`, SQL
   views for the cheap ones. No model in this path.
 - **Claims MCP** (`mcp/claims/`): `query_claims`, `propose_claim`,
@@ -13,7 +14,7 @@
 - **Rails**: `src/domestique/rails/`, pure Python rules with tests,
   evaluated before any session is emitted.
 - **Planner**: `src/domestique/planner/`, templates + session library +
-  constraint check; emits TrainingPeaks structure JSON.
+  constraint check; emits intervals.icu workout structure.
 - **Agent runtime**: Anthropic SDK tool runner, scheduled as Kubernetes
   CronJobs (nightly debrief, morning readiness, weekly review), MCP servers
   attached. Managed Agents with scheduled deployments and per-athlete
