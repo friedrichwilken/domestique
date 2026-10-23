@@ -2,7 +2,7 @@
 
 ## 1. Schema
 
-- [ ] 1.1 Write `migrations/0001_data_plane.sql` for all data-plane tables in `docs/schema.md`, `activity_streams` as a hypertable; test: migration applies cleanly on a fresh TimescaleDB container
+- [x] 1.1 Write `migrations/0001_data_plane.sql` for all data-plane tables in `docs/schema.md`, `activity_streams` as a hypertable; test: migration applies cleanly on a fresh TimescaleDB container
 - [x] 1.2 Add `docker-compose.yml` with a TimescaleDB service and a `just db-up` recipe
 
 ## 2. Fixtures
