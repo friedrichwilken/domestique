@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from domestique.claims.store import ClaimNotFound, MemoryStore
+from domestique.claims.store import ClaimNotFoundError, MemoryStore
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -43,7 +43,7 @@ def test_attach_evidence_and_unknown_claim():
     c = s.propose_claim("a", "x", "prior", "day", [], "agent")
     s.attach_evidence(c.id, "reference", "ref")
     assert len(s.query_claims()[0].evidence) == 1
-    with pytest.raises(ClaimNotFound):
+    with pytest.raises(ClaimNotFoundError):
         s.attach_evidence("nope", "reference", "r")
     with pytest.raises(ValueError):
         s.attach_evidence(c.id, "bogus", "r")
@@ -66,8 +66,15 @@ def test_seed_file_valid():
     s = MemoryStore()
     for c in d["claims"]:
         assert c["evidence"]
-        s.propose_claim(d["athlete_id"], c["text"], c["source_layer"], c["horizon"],
-                        c["evidence"], "seed", c["confidence"])
+        s.propose_claim(
+            d["athlete_id"],
+            c["text"],
+            c["source_layer"],
+            c["horizon"],
+            c["evidence"],
+            "seed",
+            c["confidence"],
+        )
     # season claims are never observed: they cannot be learned from one athlete
     assert all(c["source_layer"] == "prior" for c in d["claims"] if c["horizon"] == "season")
 

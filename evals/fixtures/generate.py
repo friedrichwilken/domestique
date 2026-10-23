@@ -8,12 +8,13 @@ from __future__ import annotations
 
 import json
 import math
+from collections.abc import Iterable
 from pathlib import Path
 
 HERE = Path(__file__).parent
 
 
-def _round(xs, n=2):
+def _round(xs: Iterable[float], n: int = 2) -> list[float]:
     return [round(x, n) for x in xs]
 
 
@@ -48,7 +49,7 @@ def intervals_6x5() -> dict:
     lr: list[float] = []
     intervals: list[dict] = []
 
-    def block(secs: int, w: float, h: float, l_share: float):
+    def block(secs: int, w: float, h: float, l_share: float) -> None:
         watts.extend([w] * secs)
         hr.extend([h] * secs)
         lr.extend([l_share] * secs)
@@ -83,9 +84,9 @@ def intervals_6x5() -> dict:
     }
 
 
-def main():
+def main() -> None:
     for name, ride in (("endurance_3h", endurance_3h()), ("intervals_6x5", intervals_6x5())):
-        (HERE / f"{name}.json").write_text(json.dumps(ride, separators=(",", ":")))
+        (HERE / f"{name}.json").write_text(json.dumps(ride, separators=(",", ":")) + "\n")
         print("wrote", name)
 
 

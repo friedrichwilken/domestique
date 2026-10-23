@@ -13,6 +13,7 @@ Secrets come from the environment only (``ICU_API_KEY``,
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -33,12 +34,12 @@ class Config:
     database_url: str | None = None
 
 
-def home_dir(env: dict[str, str] | None = None) -> Path:
-    env = os.environ if env is None else env
-    return Path(env.get("DOMESTIQUE_HOME", str(DEFAULT_HOME))).expanduser()
+def home_dir(env: Mapping[str, str] | None = None) -> Path:
+    source: Mapping[str, str] = os.environ if env is None else env
+    return Path(source.get("DOMESTIQUE_HOME", str(DEFAULT_HOME))).expanduser()
 
 
-def load(env: dict[str, str] | None = None) -> Config:
+def load(env: Mapping[str, str] | None = None) -> Config:
     """Load ``config.yaml`` from the config home. Raises if it is missing."""
     home = home_dir(env)
     path = home / "config.yaml"
