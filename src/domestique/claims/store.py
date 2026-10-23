@@ -1,0 +1,296 @@
+"""Claims repository: one interface, a psycopg implementation and an in-memory one.
+
+Functions: query_claims, propose_claim, attach_evidence, confirm_or_retire.
+Every state change appends a claim_history row (never updated or deleted).
+"""
+
+from __future__ import annotations
+
+import uuid
+from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime
+from typing import Any, Protocol
+
+from domestique.claims.rules import SourceLayer, Status
+
+EVIDENCE_KINDS = ("activity", "interval", "wellness", "statement", "reference", "query")
+
+
+@dataclass(frozen=True)
+class Evidence:
+    kind: str
+    ref: str
+    note: str | None = None
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+
+
+@dataclass(frozen=True)
+class Claim:
+    id: str
+    athlete_id: str
+    text: str
+    source_layer: SourceLayer
+    confidence: float
+    status: Status
+    created_by: str
+    created_at: datetime
+    last_tested_at: datetime | None = None
+    hit_streak: int = 0
+    evidence: tuple[Evidence, ...] = ()
+
+
+@dataclass(frozen=True)
+class HistoryRow:
+    claim_id: str
+    ts: datetime
+    confidence: float
+    status: Status
+    reason: str
+    by: str
+
+
+class ClaimNotFound(KeyError):
+    pass
+
+
+def _check_evidence(kind: str) -> None:
+    if kind not in EVIDENCE_KINDS:
+        raise ValueError(f"evidence kind must be one of {EVIDENCE_KINDS}, got {kind!r}")
+
+
+class ClaimsStore(Protocol):
+    def query_claims(
+        self,
+        athlete_id: str | None = None,
+        source_layer: str | None = None,
+        status: str | None = None,
+        text_contains: str | None = None,
+    ) -> list[Claim]: ...
+
+    def propose_claim(
+        self,
+        athlete_id: str,
+        text: str,
+        source_layer: str,
+        evidence: list[dict[str, Any]],
+        created_by: str,
+        confidence: float = 0.3,
+    ) -> Claim: ...
+
+    def attach_evidence(
+        self, claim_id: str, kind: str, ref: str, note: str | None = None
+    ) -> Evidence: ...
+
+    def confirm_or_retire(self, claim_id: str, status: str, reason: str, by: str) -> Claim: ...
+
+    def record_adjustment(self, claim: Claim, reason: str, by: str) -> Claim: ...
+
+    def history(self, claim_id: str) -> list[HistoryRow]: ...
+
+
+def _validate_proposal(text: str, source_layer: str, evidence: list[dict[str, Any]]) -> None:
+    SourceLayer(source_layer)  # raises ValueError if unknown: no layer, no claim
+    if not text.strip():
+        raise ValueError("claim text is empty")
+    for e in evidence:
+        _check_evidence(e["kind"])
+
+
+def _check_decision(status: str) -> Status:
+    s = Status(status)
+    if s == Status.CANDIDATE:
+        raise ValueError("confirm_or_retire takes 'active' or 'retired'")
+    return s
+
+
+class MemoryStore:
+    """In-memory implementation used by tests and the replay harness."""
+
+    def __init__(self) -> None:
+        self._claims: dict[str, Claim] = {}
+        self._history: list[HistoryRow] = []
+
+    def _log(self, c: Claim, reason: str, by: str) -> None:
+        self._history.append(
+            HistoryRow(c.id, datetime.now(UTC), c.confidence, c.status, reason, by)
+        )
+
+    def query_claims(self, athlete_id=None, source_layer=None, status=None, text_contains=None):
+        out = []
+        for c in self._claims.values():
+            if athlete_id and c.athlete_id != athlete_id:
+                continue
+            if source_layer and c.source_layer != source_layer:
+                continue
+            if status and c.status != status:
+                continue
+            if text_contains and text_contains.lower() not in c.text.lower():
+                continue
+            out.append(c)
+        return out
+
+    def propose_claim(self, athlete_id, text, source_layer, evidence, created_by, confidence=0.3):
+        _validate_proposal(text, source_layer, evidence)
+        c = Claim(
+            id=str(uuid.uuid4()),
+            athlete_id=athlete_id,
+            text=text,
+            source_layer=SourceLayer(source_layer),
+            confidence=confidence,
+            status=Status.CANDIDATE,
+            created_by=created_by,
+            created_at=datetime.now(UTC),
+            evidence=tuple(Evidence(e["kind"], e["ref"], e.get("note")) for e in evidence),
+        )
+        self._claims[c.id] = c
+        self._log(c, "proposed", created_by)
+        return c
+
+    def _get(self, claim_id: str) -> Claim:
+        try:
+            return self._claims[claim_id]
+        except KeyError:
+            raise ClaimNotFound(claim_id) from None
+
+    def attach_evidence(self, claim_id, kind, ref, note=None):
+        _check_evidence(kind)
+        c = self._get(claim_id)
+        ev = Evidence(kind, ref, note)
+        self._claims[claim_id] = replace(c, evidence=(*c.evidence, ev))
+        return ev
+
+    def confirm_or_retire(self, claim_id, status, reason, by):
+        s = _check_decision(status)
+        c = replace(self._get(claim_id), status=s)
+        self._claims[claim_id] = c
+        self._log(c, reason, by)
+        return c
+
+    def record_adjustment(self, claim, reason, by):
+        """Persist a claim returned by rules.adjust_confidence and log it."""
+        self._get(claim.id)
+        c = replace(claim, last_tested_at=datetime.now(UTC))
+        self._claims[c.id] = c
+        self._log(c, reason, by)
+        return c
+
+    def history(self, claim_id):
+        return [h for h in self._history if h.claim_id == claim_id]
+
+
+_COLS = (
+    "id, athlete_id, text, source_layer, confidence, status, created_by, created_at, "
+    "last_tested_at, hit_streak"
+)
+
+
+class PgStore:
+    """psycopg implementation against migrations/0002_claims.sql."""
+
+    def __init__(self, conn) -> None:
+        self.conn = conn
+
+    def _row_to_claim(self, r, evidence=()) -> Claim:
+        return Claim(
+            id=str(r[0]), athlete_id=r[1], text=r[2], source_layer=SourceLayer(r[3]),
+            confidence=float(r[4]), status=Status(r[5]), created_by=r[6], created_at=r[7],
+            last_tested_at=r[8], hit_streak=r[9], evidence=tuple(evidence),
+        )
+
+    def _evidence(self, cur, claim_id) -> list[Evidence]:
+        cur.execute("SELECT id, kind, ref, note FROM evidence WHERE claim_id = %s", (claim_id,))
+        return [Evidence(kind=k, ref=r, note=n, id=str(i)) for i, k, r, n in cur.fetchall()]
+
+    def _get(self, cur, claim_id) -> Claim:
+        cur.execute(f"SELECT {_COLS} FROM claims WHERE id = %s", (claim_id,))
+        row = cur.fetchone()
+        if row is None:
+            raise ClaimNotFound(claim_id)
+        return self._row_to_claim(row, self._evidence(cur, claim_id))
+
+    def _log(self, cur, c: Claim, reason: str, by: str) -> None:
+        cur.execute(
+            "INSERT INTO claim_history (claim_id, confidence, status, reason, by) "
+            "VALUES (%s, %s, %s, %s, %s)",
+            (c.id, c.confidence, c.status.value, reason, by),
+        )
+
+    def query_claims(self, athlete_id=None, source_layer=None, status=None, text_contains=None):
+        where, args = [], []
+        for col, val in (("athlete_id", athlete_id), ("source_layer", source_layer),
+                         ("status", status)):
+            if val:
+                where.append(f"{col} = %s")
+                args.append(val)
+        if text_contains:
+            where.append("text ILIKE %s")
+            args.append(f"%{text_contains}%")
+        sql = f"SELECT {_COLS} FROM claims"
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY created_at"
+        with self.conn.cursor() as cur:
+            cur.execute(sql, args)
+            rows = cur.fetchall()
+            return [self._row_to_claim(r, self._evidence(cur, r[0])) for r in rows]
+
+    def propose_claim(self, athlete_id, text, source_layer, evidence, created_by, confidence=0.3):
+        _validate_proposal(text, source_layer, evidence)
+        with self.conn.transaction(), self.conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO claims (athlete_id, text, source_layer, confidence, status, "
+                "created_by) VALUES (%s, %s, %s, %s, 'candidate', %s) RETURNING id",
+                (athlete_id, text, source_layer, confidence, created_by),
+            )
+            cid = cur.fetchone()[0]
+            for e in evidence:
+                cur.execute(
+                    "INSERT INTO evidence (claim_id, kind, ref, note) VALUES (%s, %s, %s, %s)",
+                    (cid, e["kind"], e["ref"], e.get("note")),
+                )
+            c = self._get(cur, cid)
+            self._log(cur, c, "proposed", created_by)
+            return c
+
+    def attach_evidence(self, claim_id, kind, ref, note=None):
+        _check_evidence(kind)
+        with self.conn.transaction(), self.conn.cursor() as cur:
+            self._get(cur, claim_id)
+            cur.execute(
+                "INSERT INTO evidence (claim_id, kind, ref, note) VALUES (%s, %s, %s, %s) "
+                "RETURNING id",
+                (claim_id, kind, ref, note),
+            )
+            return Evidence(kind, ref, note, id=str(cur.fetchone()[0]))
+
+    def confirm_or_retire(self, claim_id, status, reason, by):
+        s = _check_decision(status)
+        with self.conn.transaction(), self.conn.cursor() as cur:
+            self._get(cur, claim_id)
+            cur.execute("UPDATE claims SET status = %s WHERE id = %s", (s.value, claim_id))
+            c = self._get(cur, claim_id)
+            self._log(cur, c, reason, by)
+            return c
+
+    def record_adjustment(self, claim, reason, by):
+        with self.conn.transaction(), self.conn.cursor() as cur:
+            self._get(cur, claim.id)
+            cur.execute(
+                "UPDATE claims SET confidence = %s, status = %s, source_layer = %s, "
+                "hit_streak = %s, last_tested_at = now() WHERE id = %s",
+                (claim.confidence, claim.status.value, claim.source_layer.value,
+                 claim.hit_streak, claim.id),
+            )
+            c = self._get(cur, claim.id)
+            self._log(cur, c, reason, by)
+            return c
+
+    def history(self, claim_id):
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "SELECT claim_id, ts, confidence, status, reason, by FROM claim_history "
+                "WHERE claim_id = %s ORDER BY ts",
+                (claim_id,),
+            )
+            return [HistoryRow(str(a), b, float(c), Status(d), e, f)
+                    for a, b, c, d, e, f in cur.fetchall()]

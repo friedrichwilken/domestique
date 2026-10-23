@@ -1,0 +1,15 @@
+# Safety rails. Code reads these; prompts never override them. Triggering
+# one stops or downgrades the plan and produces referral wording.
+- id: joint-pain
+  trigger: "subjective.tags contains 'joint-pain'"
+  action: stop_plan
+  message: "Joint pain reported. Plan paused; this is for a physio or doctor."
+- id: hrv-floor
+  trigger: "wellness.hrv < 0.65 * baselines.hrv"
+  action: downgrade_day
+- id: ramp-ceiling
+  trigger: "ctl_delta_7d > 7"
+  action: refuse_additional_load
+- id: illness
+  trigger: "context.kind == 'illness'"
+  action: no_intensity

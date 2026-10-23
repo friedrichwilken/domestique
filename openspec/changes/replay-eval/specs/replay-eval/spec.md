@@ -1,0 +1,27 @@
+# Spec Delta
+
+## Purpose
+Measure whether the athlete model learns, by replaying a season with no access to the future.
+
+## ADDED Requirements
+
+### Requirement: No future leakage
+At each replayed day, predictions SHALL be made using only data dated on or before that day.
+
+#### Scenario: Peek attempt
+- **WHEN** the predictor requests wellness for a date after the replay cursor
+- **THEN** the harness returns nothing for it
+
+### Requirement: Error per metric over time
+The harness SHALL emit, per metric, the signed error and hit rate per replayed week as CSV, and a markdown summary whose last line is the mean absolute error across metrics for the final four weeks.
+
+#### Scenario: Headline last
+- **WHEN** the replay completes
+- **THEN** the final line of the summary is the headline number
+
+### Requirement: A planted effect is discoverable
+The fixture season SHALL contain a planted effect (evening intensity costs about one hour of sleep) and the harness SHALL show the sleep prediction error for evening-intensity days shrinking over the season when the loop runs.
+
+#### Scenario: Loop on vs off
+- **WHEN** the replay runs with confidence updates disabled
+- **THEN** the sleep error on evening-intensity days does not shrink, and with updates enabled it does

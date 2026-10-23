@@ -1,0 +1,29 @@
+schema: spec-driven
+
+context: |
+  domestique is a training-analysis assistant for endurance athletes. DESIGN.md
+  defines five cornerstones: (1) deterministic data plane, (2) athlete model of
+  claims with provenance, (3) prediction/outcome loop, (4) intent layer, (5)
+  planner. Every recommendation carries a source layer: observed > stated >
+  prior; the intent layer beats all three. Nothing writes a plan to
+  TrainingPeaks without human approval. Safety rails are code, never prompts.
+  Python 3.12, Postgres 16 + TimescaleDB, Anthropic SDK, MCP servers.
+  The repo is public: real athlete data, ids and personal constraints never enter it; config and intent live in $DOMESTIQUE_HOME; fixtures are synthetic.
+  Task specs in tasks/ predate OpenSpec and map one-to-one onto changes.
+
+rules:
+  proposal:
+    - State what is out of scope
+    - Name the cornerstone(s) from DESIGN.md the change serves
+  specs:
+    - Requirements are testable; every requirement has at least one scenario
+    - Derived metrics, rails and planner behaviour are specified as pure functions over data, never as prompt behaviour
+  tasks:
+    - One task per PR-sized unit; each task names its test
+    - No task may call a live athlete API in tests
+
+operations:
+  apply:
+    guidance:
+      - Implementation is done by a worker model in a git worktree per change; the tech lead reviews and merges
+      - Run pytest and ruff before reporting

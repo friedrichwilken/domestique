@@ -1,0 +1,15 @@
+# Copy to $DOMESTIQUE_HOME/config.yaml (default ~/.config/domestique/config.yaml).
+# Nothing in this file is read from the repo at run time.
+athlete_id: "i000000"          # intervals.icu athlete id
+tp_athlete_id: "0000000"       # TrainingPeaks athlete id (optional)
+timezone: "Europe/Berlin"
+bedtime: "22:30"
+hr_max: 190
+baselines:
+  hrv: 80
+  rhr: 50
+intent_dir: "~/.config/domestique/intent"
+database_url: "postgresql://domestique:domestique@localhost:5432/domestique"
+# Secrets never go in this file. Environment variables:
+#   ICU_API_KEY            intervals.icu API key
+#   DOMESTIQUE_HUMAN_TOKEN token required by confirm_or_retire on the claims MCP

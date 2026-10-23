@@ -1,0 +1,13 @@
+# Constraints. Facts about the athlete's life. The planner respects them;
+# the model does not argue with them.
+- id: hours-per-week
+  value: 8
+  set_by: athlete
+- id: no-evening-intensity
+  text: "Hard sessions end by 19:00"
+  reason: "Observed: evening intensity fragments sleep (claim obs-0003)"
+  set_by: athlete
+  set_on: 2026-10-01
+- id: work-days
+  text: "Office days Mon–Thu; long rides on the weekend"
+  set_by: athlete

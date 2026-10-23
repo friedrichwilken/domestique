@@ -1,0 +1,11 @@
+# Goals. Dated, ranked. Every plan is checked against these.
+- id: ftp-target
+  text: "FTP 300 W by 2027-04-01"
+  rank: 2
+  set_on: 2026-10-01
+  set_by: athlete
+- id: a-race
+  text: "Spring gran fondo; multi-hour power retention is the currency"
+  rank: 1
+  set_on: 2026-09-15
+  set_by: athlete

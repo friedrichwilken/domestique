@@ -1,0 +1,6 @@
+# Appended by the system when a human overrules a prediction or plan.
+- ts: 2026-10-05
+  by: athlete
+  text: "Evening interval session as ridden was intended: hard on/off work, morning session ~10% easier"
+  overruled: "Plan text 'tempo, ~75% HRmax' and the assistant's suggestion to ride the evening session easier"
+  prediction_at_time: {next_morning_hrv: 65, sleep_h: 6.5}
