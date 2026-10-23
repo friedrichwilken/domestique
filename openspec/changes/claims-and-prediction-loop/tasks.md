@@ -2,7 +2,7 @@
 
 ## 1. Store
 
-- [ ] 1.1 `migrations/0002_claims.sql` with enum source layer, confidence check constraints by layer, append-only trigger on claim_history; test: migration applies, history edit is rejected
+- [x] 1.1 `migrations/0002_claims.sql` with enum source layer, confidence check constraints by layer, append-only trigger on claim_history; test: migration applies, history edit is rejected
 - [x] 1.2 Repository layer with Postgres and in-memory implementations of query, propose, attach_evidence, confirm_or_retire; test: proposal without layer rejected, candidate status on propose
 - [x] 1.3 Confidence rules module (hit, miss, cap, retire, promote); test: one test per clause
 
