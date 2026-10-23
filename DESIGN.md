@@ -98,8 +98,13 @@ model is a notebook that only grows.
 
 Against confirmation bias, the loop is pre-registered and mechanical:
 predictions carry a range written before the session, scoring is code, and
-a claim whose predictions hit more than ~95% of the time is flagged as
-having ranges too wide to mean anything, not celebrated.
+calibration is checked on the range, not on luck. A claim whose errors
+average less than a third of its half-range is flagged as uninformative
+and stops gaining confidence; one whose hit rate falls below 60% is
+flagged as overconfident and loses extra. Hit rate alone never flags.
+Every applicable claim is scored on every session, not only the one that
+won the prediction, so a better rival can take over without waiting for
+the incumbent to fail.
 
 ### 4. Intent layer (decided by humans)
 
