@@ -9,6 +9,7 @@ baselines:
   rhr: 50
 intent_dir: "~/.config/domestique/intent"
 database_url: "postgresql://domestique:domestique@localhost:5432/domestique"
+write_comments: false           # post debriefs as activity comments (default false)
 # Secrets never go in this file. Environment variables:
 #   ICU_API_KEY            intervals.icu API key
 #   DOMESTIQUE_HUMAN_TOKEN token required by confirm_or_retire on the claims MCP

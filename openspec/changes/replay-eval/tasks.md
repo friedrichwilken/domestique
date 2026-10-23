@@ -10,3 +10,4 @@
 - [ ] 2.2 `evals/replay.py` producing per-week CSV and markdown with the headline last; test: headline-last scenario
 - [ ] 2.3 Loop on/off flag; test: sleep error shrinks only with the loop on
 - [ ] 2.4 `just eval` recipe
+- [ ] 2.5 Data-source switch (fixture season or the athlete's ingested history from the configured database) and the bootstrap review list output; test: bootstrap-review and no-season-claims scenarios against a fixture

@@ -32,6 +32,8 @@ class Config:
     baselines: dict[str, float] = field(default_factory=dict)
     intent_dir: Path = field(default_factory=lambda: DEFAULT_HOME / "intent")
     database_url: str | None = None
+    # Post debriefs as comments on the athlete's activities. Off unless set.
+    write_comments: bool = False
 
 
 def home_dir(env: Mapping[str, str] | None = None) -> Path:
@@ -62,4 +64,13 @@ def load(env: Mapping[str, str] | None = None) -> Config:
         baselines={k: float(v) for k, v in (raw.get("baselines") or {}).items()},
         intent_dir=intent_dir,
         database_url=raw.get("database_url"),
+        write_comments=_flag(raw, "write_comments", path),
     )
+
+
+def _flag(raw: Mapping[str, object], key: str, path: Path) -> bool:
+    """A boolean switch that defaults to false; anything but a YAML boolean is an error."""
+    value = raw.get(key, False)
+    if not isinstance(value, bool):
+        raise TypeError(f"{path}: '{key}' must be true or false, got {value!r}")
+    return value

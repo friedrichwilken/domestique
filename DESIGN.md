@@ -191,6 +191,37 @@ shape with a synthetic athlete.
 - Weekly summary plus a queue of drafted questions, for the athlete and
   anyone they choose to share it with.
 
+## Onboarding: the replay is the bootstrap
+
+A new athlete starts with an empty athlete model. The replay harness,
+pointed at their own history instead of a fixture season, produces the
+first one.
+
+1. **Intake.** A short questionnaire becomes the intent files and the first
+   `stated` claims: goals, hours, constraints, bedtime, max heart rate,
+   known quirks. Once.
+2. **Backfill.** The athlete names a date range, typically the last six to
+   twelve months. Ingestion pulls executed activities, planned workouts,
+   wellness and comments for it; derived metrics run over all of it.
+3. **Replay with the loop on.** The harness walks the range day by day
+   with the future hidden, seeded with textbook priors only. Every session
+   gets predictions, every outcome scores them, confidence moves by the
+   rule. Priors that held are promoted within their horizon, priors that
+   did not are retired, and `observed` candidates are proposed from the
+   patterns the scorer saw.
+4. **Review.** The athlete sees each candidate with its horizon, hit rate
+   and evidence rides, and confirms, edits or rejects it. This is the human
+   gate. A candidate the athlete recognises as coincidence is rejected even
+   when the numbers hit, because confidence would otherwise keep growing on
+   it.
+5. **Live.** The nightly debrief runs the same loop one day at a time.
+
+What a backfill can produce: dozens of `day` claims at real confidence, a
+handful of `week` claims at modest confidence, and no `season` claims, by
+rule. Where historical planned sessions are missing, the loop still
+predicts from the executed session's start and learns the physiology
+responses; it just cannot score plan-versus-execution for those days.
+
 ## Evals
 
 Replay harness: feed a past season day by day, let the system predict,
