@@ -31,6 +31,18 @@ unit-tested against fixture rides.
 - `outcomes(prediction_id, actual numeric, error numeric, scored_at)`
 - `questions(id, athlete_id, for enum(athlete,reviewer), text, context jsonb, status, created_at, answered_at, answer)`
 
+Migration `0005_loop.sql` (tasks 3.1-3.3): `predictions.planned_session_id` becomes
+`bigint → planned_sessions(id)` (0002 had declared it uuid), predictions gain
+`basis jsonb` (the pre-registered inputs: HR band, base value, rides, superseded
+claims), `metric` is one of `watts_at_hr, peak_hr, hrv_next_morning, sleep_hours`,
+and `(planned_session_id, metric)` is unique, so a session is predicted once.
+
+- `claim_bindings(claim_id, metric, params jsonb, conditions jsonb, created_at)`: how a
+  claim feeds a metric. `expected = base * (1 + change_pct/100) + offset`, range
+  `expected -/+ (expected * range_pct/100 + range_abs)`; `rides` for watts at HR.
+  `conditions`: `min_if`, `max_if`, `sports`, `start_hour_from`, `start_hour_to`.
+  A claim without a binding feeds no prediction. Rules in `src/domestique/loop/`.
+
 ## Intent
 
 Files in `$DOMESTIQUE_HOME/intent/*.yaml` on the athlete's machine, loaded read-only at run time. Overrides are
