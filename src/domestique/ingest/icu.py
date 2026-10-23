@@ -14,16 +14,82 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections.abc import Mapping, Sequence
 from datetime import UTC, date, datetime
+from typing import Any, TypedDict
 
 import psycopg
 
 from domestique import db
 from domestique.ingest import icu_client
-from domestique.metrics import decoupling_pct, efficiency_factor, interval_lr_balance, lr_balance
+from domestique.ingest.icu_client import IcuPayload
+from domestique.metrics import (
+    Interval,
+    Sample,
+    decoupling_pct,
+    efficiency_factor,
+    interval_lr_balance,
+    lr_balance,
+)
 
 SOURCE = "intervals.icu"
 STREAM_TYPES = "time,watts,heartrate,cadence,temp,left_right_balance"
+
+
+# --- row shapes -------------------------------------------------------------
+
+# "if" is a keyword, so the activity row needs the functional TypedDict syntax.
+ActivityRow = TypedDict(
+    "ActivityRow",
+    {
+        "athlete_id": str,
+        "source": str,
+        "external_id": str,
+        "start_local": datetime | None,
+        "start_utc": datetime | None,
+        "sport": str | None,
+        "name": str | None,
+        "moving_s": int | None,
+        "avg_w": float | None,
+        "np_w": float | None,
+        "avg_hr": float | None,
+        "max_hr": float | None,
+        "avg_cad": float | None,
+        "ftp_at_ride": float | None,
+        "load": float | None,
+        "if": float | None,
+        "ef": float | None,
+        "decoupling": float | None,
+        "lr_balance": float | None,
+        "raw": str,
+    },
+)
+
+
+class IntervalRow(TypedDict):
+    idx: int
+    kind: str | None
+    start_s: float | None
+    dur_s: float | None
+    avg_w: float | None
+    avg_hr: float | None
+    max_hr: float | None
+    avg_cad: float | None
+    lr_balance: float | None
+
+
+class WellnessRow(TypedDict):
+    athlete_id: str
+    date: date
+    hrv: float | None
+    rhr: float | None
+    sleep_s: float | None
+    sleep_score: float | None
+    weight: float | None
+    ctl: float | None
+    atl: float | None
+    source: str
+    raw: str
 
 
 # --- pure mapping: API payloads -> row dicts -------------------------------
@@ -35,14 +101,14 @@ def _dt(value: str | None) -> datetime | None:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
-def samples_from_streams(streams: list[dict]) -> list[dict]:
+def samples_from_streams(streams: list[IcuPayload]) -> list[Sample]:
     """Zip icu stream arrays into sample dicts (t_s, watts, hr, cadence, lr, temp)."""
     by_type = {s["type"]: s["data"] for s in streams if s.get("data") is not None}
     n = max((len(v) for v in by_type.values()), default=0)
     time = by_type.get("time") or list(range(n))
     lr = by_type.get("left_right_balance") or by_type.get("lr") or []
 
-    def at(arr, i):
+    def at(arr: Sequence[Any], i: int) -> Any:
         return arr[i] if i < len(arr) else None
 
     return [
@@ -58,11 +124,13 @@ def samples_from_streams(streams: list[dict]) -> list[dict]:
     ]
 
 
-def map_activity(a: dict, athlete_id: str, samples: list[dict] | None = None) -> dict:
+def map_activity(
+    a: IcuPayload, athlete_id: str, samples: list[Sample] | None = None
+) -> ActivityRow:
     """Activity row. Our own EF/decoupling/L-R from streams win over icu's when streams exist."""
     start_local = _dt(a["start_date_local"])
     intensity = a.get("icu_intensity")
-    row = {
+    row: ActivityRow = {
         "athlete_id": athlete_id,
         "source": SOURCE,
         "external_id": str(a["id"]),
@@ -93,9 +161,11 @@ def map_activity(a: dict, athlete_id: str, samples: list[dict] | None = None) ->
     return row
 
 
-def map_intervals(payload: dict | list, samples: list[dict] | None = None) -> list[dict]:
+def map_intervals(
+    payload: IcuPayload | list[IcuPayload], samples: list[Sample] | None = None
+) -> list[IntervalRow]:
     items = payload.get("icu_intervals", []) if isinstance(payload, dict) else payload
-    rows = []
+    rows: list[IntervalRow] = []
     for idx, iv in enumerate(items):
         start = iv.get("start_time", iv.get("start_index"))
         dur = iv.get("elapsed_time", iv.get("moving_time"))
@@ -113,14 +183,28 @@ def map_intervals(payload: dict | list, samples: list[dict] | None = None) -> li
             }
         )
     if samples:
-        located = [r for r in rows if r["start_s"] is not None and r["dur_s"] is not None]
-        for r, lr in zip(located, interval_lr_balance(samples, located), strict=True):
-            if lr is not None:
-                r["lr_balance"] = lr
+        _apply_interval_balance(rows, samples)
     return rows
 
 
-def map_wellness(w: dict, athlete_id: str) -> dict:
+def _span(row: IntervalRow) -> Interval | None:
+    """The interval's position in the ride, or None when the payload did not locate it."""
+    start, dur = row["start_s"], row["dur_s"]
+    if start is None or dur is None:
+        return None
+    return {"start_s": start, "dur_s": dur}
+
+
+def _apply_interval_balance(rows: list[IntervalRow], samples: list[Sample]) -> None:
+    """Overwrite each locatable interval's L/R balance with the one computed from streams."""
+    located = [(r, span) for r in rows if (span := _span(r)) is not None]
+    balances = interval_lr_balance(samples, [span for _, span in located])
+    for (row, _), lr in zip(located, balances, strict=True):
+        if lr is not None:
+            row["lr_balance"] = lr
+
+
+def map_wellness(w: IcuPayload, athlete_id: str) -> WellnessRow:
     return {
         "athlete_id": athlete_id,
         "date": date.fromisoformat(str(w["id"])[:10]),
@@ -139,7 +223,9 @@ def map_wellness(w: dict, athlete_id: str) -> dict:
 # --- database writes -------------------------------------------------------
 
 
-def _upsert(conn, table: str, row: dict, conflict: list[str]) -> psycopg.Cursor:
+def _upsert(
+    conn: db.Conn, table: str, row: Mapping[str, Any], conflict: Sequence[str]
+) -> psycopg.Cursor[tuple[Any, ...]]:
     cols = list(row)
     quoted = ", ".join(f'"{c}"' for c in cols)
     marks = ", ".join(f"%({c})s" for c in cols)
@@ -152,57 +238,86 @@ def _upsert(conn, table: str, row: dict, conflict: list[str]) -> psycopg.Cursor:
     )
 
 
-def store_activity(
-    conn: psycopg.Connection, row: dict, intervals: list[dict], samples: list[dict]
-) -> int:
-    with conn.transaction():
-        activity_id = _upsert(conn, "activities", row, ["athlete_id", "source", "external_id"])
-        activity_id = activity_id.fetchone()[0]
-        conn.execute("DELETE FROM activity_intervals WHERE activity_id = %s", (activity_id,))
-        for iv in intervals:
-            _upsert(
-                conn,
-                "activity_intervals",
-                {"activity_id": activity_id, **iv},
-                ["activity_id", "idx"],
-            )
-        conn.execute("DELETE FROM activity_streams WHERE activity_id = %s", (activity_id,))
-        if samples:
-            with conn.cursor() as cur:
-                cur.executemany(
-                    "INSERT INTO activity_streams (activity_id, t_s, watts, hr, cadence, lr, temp) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING",
-                    [
-                        (
-                            activity_id,
-                            s["t_s"],
-                            s["watts"],
-                            s["hr"],
-                            s["cadence"],
-                            s["lr"],
-                            s["temp"],
-                        )
-                        for s in samples
-                    ],
-                )
-        ftp = row.get("ftp_at_ride")
-        if ftp:
-            on = row["start_local"].date()
-            prev = conn.execute(
-                "SELECT ftp_w FROM ftp_history WHERE athlete_id = %s AND valid_from <= %s "
-                "ORDER BY valid_from DESC LIMIT 1",
-                (row["athlete_id"], on),
-            ).fetchone()
-            if prev is None or float(prev[0]) != float(ftp):
-                conn.execute(
-                    "INSERT INTO ftp_history (athlete_id, valid_from, ftp_w, source) "
-                    "VALUES (%s, %s, %s, %s) ON CONFLICT (athlete_id, valid_from) DO NOTHING",
-                    (row["athlete_id"], on, ftp, SOURCE),
-                )
+def _upsert_activity(conn: db.Conn, row: ActivityRow) -> int:
+    cur = _upsert(conn, "activities", row, ["athlete_id", "source", "external_id"])
+    created = cur.fetchone()
+    if created is None:
+        raise RuntimeError("activity upsert returned no row")
+    activity_id: int = created[0]
     return activity_id
 
 
-def store_wellness(conn: psycopg.Connection, row: dict) -> None:
+def _replace_intervals(conn: db.Conn, activity_id: int, intervals: Sequence[IntervalRow]) -> None:
+    conn.execute("DELETE FROM activity_intervals WHERE activity_id = %s", (activity_id,))
+    for iv in intervals:
+        _upsert(
+            conn,
+            "activity_intervals",
+            {"activity_id": activity_id, **iv},
+            ["activity_id", "idx"],
+        )
+
+
+def _replace_streams(conn: db.Conn, activity_id: int, samples: Sequence[Sample]) -> None:
+    conn.execute("DELETE FROM activity_streams WHERE activity_id = %s", (activity_id,))
+    if not samples:
+        return
+    with conn.cursor() as cur:
+        cur.executemany(
+            "INSERT INTO activity_streams (activity_id, t_s, watts, hr, cadence, lr, temp) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING",
+            [
+                (
+                    activity_id,
+                    s["t_s"],
+                    s["watts"],
+                    s["hr"],
+                    s["cadence"],
+                    s["lr"],
+                    s["temp"],
+                )
+                for s in samples
+            ],
+        )
+
+
+def _record_ftp_change(conn: db.Conn, row: ActivityRow) -> None:
+    """Append to ftp_history when the ride's FTP differs from the one in force that day."""
+    ftp = row["ftp_at_ride"]
+    if not ftp:
+        return
+    start_local = row["start_local"]
+    if start_local is None:
+        raise ValueError("activity has an FTP but no local start time")
+    on = start_local.date()
+    prev = conn.execute(
+        "SELECT ftp_w FROM ftp_history WHERE athlete_id = %s AND valid_from <= %s "
+        "ORDER BY valid_from DESC LIMIT 1",
+        (row["athlete_id"], on),
+    ).fetchone()
+    if prev is None or float(prev[0]) != float(ftp):
+        conn.execute(
+            "INSERT INTO ftp_history (athlete_id, valid_from, ftp_w, source) "
+            "VALUES (%s, %s, %s, %s) ON CONFLICT (athlete_id, valid_from) DO NOTHING",
+            (row["athlete_id"], on, ftp, SOURCE),
+        )
+
+
+def store_activity(
+    conn: db.Conn,
+    row: ActivityRow,
+    intervals: Sequence[IntervalRow],
+    samples: Sequence[Sample],
+) -> int:
+    with conn.transaction():
+        activity_id = _upsert_activity(conn, row)
+        _replace_intervals(conn, activity_id, intervals)
+        _replace_streams(conn, activity_id, samples)
+        _record_ftp_change(conn, row)
+    return activity_id
+
+
+def store_wellness(conn: db.Conn, row: WellnessRow) -> None:
     _upsert(conn, "wellness", row, ["athlete_id", "date"])
 
 
@@ -210,7 +325,7 @@ def store_wellness(conn: psycopg.Connection, row: dict) -> None:
 
 
 def ingest(
-    conn: psycopg.Connection,
+    conn: db.Conn,
     client: icu_client.IcuClient,
     oldest: date,
     newest: date,

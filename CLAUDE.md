@@ -28,6 +28,17 @@ exist.
 - Tests over prompts: derived metrics, rails and the planner are code with
   unit tests. Prompts only reason over their output.
 
+## Code quality
+
+`just check` is the bar: strict ruff rule set, ruff format, mypy strict over
+`src/` and `mcp/`, pytest. CI enforces all four and main is protected.
+Fix the code, not the config: adding a rule to `ignore` or widening
+`per-file-ignores` needs a one-line reason in the PR. Inline `noqa` and
+`type: ignore` only with a rule code and a reason. Functions over the
+complexity ceiling get split into named helpers, not shuffled. `Any` is
+allowed at the external-API boundary only. Run `just setup` once to install
+the pre-commit hooks.
+
 ## Stack
 
 Python 3.12, Postgres + TimescaleDB, Anthropic SDK (`claude-opus-5-5` for

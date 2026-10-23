@@ -37,6 +37,11 @@ from __future__ import annotations
 
 from dataclasses import replace
 from enum import StrEnum
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    # store imports this module at runtime; importing Claim back would be a cycle.
+    from domestique.claims.store import Claim
 
 HIT_STEP = 0.10
 MISS_STEP = 0.15
@@ -72,12 +77,51 @@ class Status(StrEnum):
     CANDIDATE = "candidate"
 
 
-def adjust_confidence(claim, hit: bool):
+def adjust_confidence(claim: Claim, hit: bool) -> Claim:
     """Return an updated copy of ``claim`` after a scored prediction."""
     return adjust_with_notes(claim, hit)[0]
 
 
-def adjust_with_notes(claim, hit: bool):
+def _always_hit_check(claim: Claim) -> tuple[bool, list[str]]:
+    """Whether the always-hit flag is (now) set, plus the note if it was just raised."""
+    if claim.always_hit:
+        return True, []
+    if claim.scored >= FLAG_MIN_SCORED and claim.hits / claim.scored > FLAG_HIT_RATE:
+        note = (
+            f"always-hit flag set: {claim.hits}/{claim.scored} scored predictions hit, "
+            "ranges are uninformative; hits no longer raise confidence"
+        )
+        return True, [note]
+    return False, []
+
+
+def _apply_outcome(claim: Claim, hit: bool, flagged: bool) -> tuple[float, int]:
+    """Raw confidence and hit streak after one outcome, before caps and promotion."""
+    if hit:
+        confidence = claim.confidence if flagged else min(CONF_MAX, claim.confidence + HIT_STEP)
+        return confidence, claim.hit_streak + 1
+    return max(CONF_MIN, claim.confidence - MISS_STEP), 0
+
+
+def _promote(layer: SourceLayer, horizon: Horizon, streak: int) -> tuple[SourceLayer, list[str]]:
+    """Promote a prior after enough consecutive hits; season priors are refused (noted once)."""
+    if layer != SourceLayer.PRIOR or streak < PROMOTE_AFTER:
+        return layer, []
+    if horizon != Horizon.SEASON:
+        return SourceLayer.OBSERVED, []
+    if streak == PROMOTE_AFTER:
+        return layer, [f"promotion refused: season-horizon claim stays prior after {streak} hits"]
+    return layer, []
+
+
+def _capped(confidence: float, layer: SourceLayer, horizon: Horizon) -> float:
+    """Apply the layer cap (non-observed) and the horizon cap, rounded to 3 places."""
+    if layer != SourceLayer.OBSERVED:
+        confidence = min(confidence, PRIOR_CAP)
+    return round(min(confidence, HORIZON_CAP[horizon]), 3)
+
+
+def adjust_with_notes(claim: Claim, hit: bool) -> tuple[Claim, list[str]]:
     """Return ``(updated claim, history notes)`` after a scored prediction.
 
     Works on any dataclass with source_layer, horizon, confidence, status,
@@ -85,40 +129,21 @@ def adjust_with_notes(claim, hit: bool):
     """
     if claim.status == Status.RETIRED:
         return claim, []
-    notes: list[str] = []
-    flagged = claim.always_hit
-    if (not flagged and claim.scored >= FLAG_MIN_SCORED
-            and claim.hits / claim.scored > FLAG_HIT_RATE):
-        flagged = True
-        notes.append(
-            f"always-hit flag set: {claim.hits}/{claim.scored} scored predictions hit, "
-            "ranges are uninformative; hits no longer raise confidence"
-        )
-    if hit:
-        confidence = claim.confidence if flagged else min(CONF_MAX, claim.confidence + HIT_STEP)
-        streak = claim.hit_streak + 1
-    else:
-        confidence = max(CONF_MIN, claim.confidence - MISS_STEP)
-        streak = 0
-    layer = claim.source_layer
-    status = claim.status
+    flagged, notes = _always_hit_check(claim)
+    confidence, streak = _apply_outcome(claim, hit, flagged)
     horizon = Horizon(claim.horizon)
-    if layer == SourceLayer.PRIOR and streak >= PROMOTE_AFTER:
-        if horizon == Horizon.SEASON:
-            if streak == PROMOTE_AFTER:
-                notes.append(
-                    f"promotion refused: season-horizon claim stays prior after {streak} hits"
-                )
-        else:
-            layer = SourceLayer.OBSERVED
-    if layer != SourceLayer.OBSERVED:
-        confidence = min(confidence, PRIOR_CAP)
-    confidence = min(confidence, HORIZON_CAP[horizon])
-    confidence = round(confidence, 3)
-    if confidence < RETIRE_BELOW:
-        status = Status.RETIRED
+    layer, promotion_notes = _promote(claim.source_layer, horizon, streak)
+    notes.extend(promotion_notes)
+    confidence = _capped(confidence, layer, horizon)
+    status = Status.RETIRED if confidence < RETIRE_BELOW else claim.status
     updated = replace(
-        claim, confidence=confidence, hit_streak=streak, source_layer=layer, status=status,
-        scored=claim.scored + 1, hits=claim.hits + (1 if hit else 0), always_hit=flagged,
+        claim,
+        confidence=confidence,
+        hit_streak=streak,
+        source_layer=layer,
+        status=status,
+        scored=claim.scored + 1,
+        hits=claim.hits + (1 if hit else 0),
+        always_hit=flagged,
     )
     return updated, notes

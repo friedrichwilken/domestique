@@ -6,7 +6,7 @@ requires-python = ">=3.12"
 dependencies = ["httpx", "psycopg[binary]", "pydantic", "pyyaml", "anthropic", "mcp>=1.2,<2"]
 
 [project.optional-dependencies]
-dev = ["pytest", "ruff"]
+dev = ["pytest", "ruff==0.17.2", "mypy", "pre-commit", "types-PyYAML"]
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -17,9 +17,63 @@ where = ["src"]
 
 [tool.ruff]
 line-length = 100
+target-version = "py312"
+src = ["src", "tests", "mcp", "evals"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "B", "UP"]
+select = [
+  "E", "W", "F",      # pycodestyle, pyflakes
+  "I",                # isort
+  "B",                # bugbear
+  "UP",               # pyupgrade
+  "N",                # pep8 naming
+  "SIM",              # simplify
+  "C4",               # comprehensions
+  "C90",              # mccabe complexity
+  "RUF",              # ruff-specific
+  "PL",               # pylint
+  "ANN",              # type annotations
+  "ARG",              # unused arguments
+  "RET",              # return consistency
+  "PTH",              # pathlib over os.path
+  "T20",              # no print in library code
+  "ERA",              # no commented-out code
+  "TRY",              # exception handling
+  "PERF",
+]
+ignore = [
+  "ANN401",   # Any is sometimes the honest type at an API boundary
+  "PLR0913",  # covered by the complexity ceiling; argument count alone is not the problem
+  "PLR0917",  # same reasoning for positional arguments
+  "TRY003",   # long messages in exceptions are fine
+]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 8
+
+[tool.ruff.lint.pylint]
+max-branches = 10
+max-statements = 40
+max-returns = 4
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["PLR2004", "ANN", "ARG", "S101"]
+"evals/**" = ["T20", "PLR2004"]
+"src/domestique/ingest/icu.py" = ["T20"]   # CLI entry point prints
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["src", "mcp"]
+warn_unreachable = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["mcp.*", "psycopg.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
