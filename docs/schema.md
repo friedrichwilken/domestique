@@ -21,7 +21,7 @@ unit-tested against fixture rides.
 
 ## Athlete model
 
-- `claims(id, athlete_id, text, source_layer enum(observed,stated,prior), confidence numeric, status enum(active,retired,candidate), created_at, last_tested_at, created_by)`
+- `claims(id, athlete_id, text, source_layer enum(observed,stated,prior), horizon enum(day,week,season), confidence numeric, status enum(active,retired,candidate), created_at, last_tested_at, created_by)`
 - `claim_history(claim_id, ts, confidence, status, reason, by)` — append-only
 - `evidence(id, claim_id, kind enum(activity,interval,wellness,statement,reference,query), ref text, note)`
 

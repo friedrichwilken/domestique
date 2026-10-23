@@ -47,7 +47,8 @@ model, and must cite the first.
 ### 2. Athlete model (claims with provenance)
 
 A versioned store of claims about the athlete. Each claim has text, a
-**source layer**, confidence, status, timestamps, and evidence links.
+**source layer**, a **feedback horizon**, confidence, status, timestamps,
+and evidence links.
 
 | Source layer | Meaning | Example |
 |---|---|---|
@@ -55,13 +56,27 @@ A versioned store of claims about the athlete. Each claim has text, a
 | `stated` | Told to the system by the athlete | "Morning sessions are ridden 10% easier than evening ones" |
 | `prior` | Textbook physiology, not yet confirmed on this athlete | "Fat oxidation peaks around 65–75% HRmax" |
 
+The feedback horizon says how long it takes to find out whether a claim
+was right:
+
+| Horizon | Feedback arrives | Samples per season | Example |
+|---|---|---|---|
+| `day` | same session or next morning | 50–150 | "Resting HR the morning after a late hard session is ~5 bpm above baseline" |
+| `week` | one to three weeks | 5–15 | "A rest day after three loaded days restores HRV to baseline" |
+| `season` | months | 1–3, confounded | "Threshold work raises this athlete's FTP more than VO2 work" |
+
 Rules:
 - Precedence on conflict: observed > stated > prior.
 - Output must say which layer it speaks from: "your data shows" vs "you
   told me" vs "the literature says".
-- Only `observed` claims can reach high confidence.
+- Only `observed` claims can reach high confidence, and only `day`-horizon
+  claims can be fully observed. `week` claims cap lower. `season` claims
+  are never promoted: with one to three confounded samples a year nobody,
+  human or model, can learn them from one athlete. They stay `prior`,
+  are capped, and are always voiced as "the literature says".
 - A `prior` is promoted to `observed` after enough confirmed predictions on
-  this athlete, or retired after enough misses.
+  this athlete, or retired after enough misses, within what its horizon
+  allows.
 - Append-only history; a claim's confidence trajectory is auditable.
 
 ### 3. Prediction and outcome loop
@@ -80,6 +95,11 @@ Turns a prescription into something the system can be wrong about.
 
 Prediction error over time is the eval. Without this loop the athlete
 model is a notebook that only grows.
+
+Against confirmation bias, the loop is pre-registered and mechanical:
+predictions carry a range written before the session, scoring is code, and
+a claim whose predictions hit more than ~95% of the time is flagged as
+having ranges too wide to mean anything, not celebrated.
 
 ### 4. Intent layer (decided by humans)
 
@@ -117,6 +137,28 @@ HR/power relationships, RPE mapping, sleep response); **single-athlete
 experiments** as a first-class feature (the way the system learns without
 months of someone watching); **explain-why** on every session so the
 athlete builds their own model.
+
+## What this cannot learn
+
+Said plainly, because a system that pretends otherwise is worse than none:
+
+- **Slow adaptations at n=1.** Which kind of training raises one athlete's
+  threshold more, whether a block "worked", how they respond to altitude or
+  heat over a season. The feedback cycle is months, the samples are few and
+  confounded by life, illness, ageing and the previous block. These stay
+  textbook priors forever, however good the season was.
+- **Responder typing.** Placing an athlete in a category of responders
+  would need large, clean population datasets that do not exist openly;
+  published studies are small and specific. The system never types an
+  athlete. Every claim is measured on this person against this person.
+- **Causal credit for a result.** A good race after a block is one
+  confounded sample. The loop records it; it does not let it move a
+  `season` claim.
+
+What it can learn is everything with a day-to-week feedback cycle: how
+sleep, heart rate, efficiency, drift and perceived effort respond to what
+was done yesterday. Load and fatigue management is built from exactly
+those claims, and that is where the value is.
 
 ## The sixth thing, which is not software
 

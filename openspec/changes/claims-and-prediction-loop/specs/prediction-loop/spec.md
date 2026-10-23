@@ -26,6 +26,13 @@ A hit (actual inside the range) SHALL raise each cited claim's confidence by 0.1
 - **WHEN** a prediction citing a claim at 0.5 misses
 - **THEN** the claim is at 0.35 with a history row naming the prediction
 
+### Requirement: Ranges that always hit are flagged
+When a claim has at least ten scored predictions and more than 95% of them are hits, the system SHALL flag the claim as having uninformative ranges and SHALL stop raising its confidence until the flag is cleared.
+
+#### Scenario: Always-hit claim
+- **WHEN** a claim's eleventh prediction hits and its hit rate is above 95%
+- **THEN** the claim is flagged and its confidence is unchanged by the hit
+
 ### Requirement: Misses that look like intent become questions
 When a miss co-occurs with a plan-vs-execution overshoot flag for the same session, the system SHALL draft a question for the athlete instead of adjusting physiology claims.
 

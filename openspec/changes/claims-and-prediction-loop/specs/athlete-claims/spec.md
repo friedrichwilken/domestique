@@ -26,6 +26,24 @@ The store SHALL cap confidence by source layer: `observed` at 0.95, `stated` at 
 - **WHEN** a prior claim at 0.6 receives a confirming outcome
 - **THEN** its confidence stays at 0.6 unless it is promoted
 
+### Requirement: Every claim has a feedback horizon
+A claim SHALL carry exactly one horizon from `day`, `week`, `season`, describing how long until its predictions can be scored, and the store SHALL reject a claim without one.
+
+#### Scenario: Missing horizon
+- **WHEN** a claim is proposed without a horizon
+- **THEN** the store rejects it with an error naming the field
+
+### Requirement: Confidence and promotion are bounded by horizon
+Beyond the layer caps, the store SHALL cap `week` claims at 0.7 and `season` claims at 0.5, and SHALL never promote a `season` claim out of `prior`.
+
+#### Scenario: Season claim with many hits
+- **WHEN** a `season`-horizon prior records five consecutive hits
+- **THEN** it remains `prior`, its confidence does not exceed 0.5, and a history row records the refused promotion
+
+#### Scenario: Week claim promoted
+- **WHEN** a `week`-horizon prior records five consecutive hits
+- **THEN** it becomes `observed` with confidence no higher than 0.7
+
 ### Requirement: Promotion and retirement
 A `prior` with five consecutive confirming outcomes on this athlete SHALL become `observed`; any claim whose confidence falls below 0.1 SHALL be retired; retired claims SHALL NOT feed predictions.
 
