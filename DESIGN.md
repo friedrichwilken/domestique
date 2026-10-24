@@ -204,6 +204,22 @@ shape with a synthetic athlete.
 - Weekly summary plus a queue of drafted questions, for the athlete and
   anyone they choose to share it with.
 
+## Services
+
+Three containers, one rule between them: the model never reaches the database.
+
+| service | holds | may touch |
+|---|---|---|
+| `db` | Postgres + TimescaleDB, the data plane and the claims store | nothing outside itself |
+| `app` | the console: every deterministic part, HTML and JSON, the human gate as a form | `db`, the training platform API |
+| `chat` | the conversational layer (Chainlit + Anthropic SDK), modes from `skills/` | `app` JSON routes, the ungated claims tools, the model API |
+
+`app` has no model dependency; `chat` has no database string and no human
+token. Later channels (the one question after a ride, over Telegram or
+similar) are more clients of `app`, not more code inside it. Each reply
+passes a source-layer check on the way out: an unlabelled statement is sent
+back once and otherwise shown marked, never dropped.
+
 ## Onboarding: the replay is the bootstrap
 
 A new athlete starts with an empty athlete model. The replay harness,
@@ -243,5 +259,7 @@ headline number and decides whether a prompt or rail change helped.
 
 ## Build order
 
-Claims table and prediction loop over existing data first (tasks 001–003).
-Everything else is plumbing. See `tasks/`.
+Claims table and prediction loop over existing data first (tasks 001–003),
+then the console (`web-console`), then the chat layer (`chat-layer`), then
+the ride-question channel. Everything else is plumbing. See `tasks/` and
+`openspec/changes/`.
