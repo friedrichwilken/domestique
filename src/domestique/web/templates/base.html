@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>{% block title %}domestique{% endblock %}</title>
+<style>
+:root {
+  --bg: #fbfaf7; --ink: #1d1f22; --muted: #5f646b; --rule: #d9d6cf;
+  --mark: #2c5d8a; --miss: #9a3b22; --flag-bg: #f6e3c8; --link: #1f5a94;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #16181b; --ink: #e8e6e1; --muted: #a0a4aa; --rule: #34383d;
+          --mark: #8cb8e2; --miss: #f0a184; --flag-bg: #4a3a22; --link: #9cc6ee; }
+}
+body { background: var(--bg); color: var(--ink); margin: 0 auto; max-width: 980px;
+       padding: 16px; font: 15px/1.45 system-ui, sans-serif; }
+h1 { font-size: 1.4rem; } h2 { font-size: 1.1rem; margin-top: 2rem; }
+.muted, .axis, .omitted { color: var(--muted); fill: var(--muted); }
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+th, td { border-bottom: 1px solid var(--rule); padding: 4px 6px; text-align: left;
+         vertical-align: top; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.flag { background: var(--flag-bg); border-radius: 3px; padding: 0 4px; margin-right: 4px; }
+.scroll { overflow-x: auto; }
+svg { max-width: 100%; height: auto; }
+svg.strip, svg.scatter { color: var(--mark); }
+svg .miss, svg .miss-label { color: var(--miss); }
+svg .claim-point circle { stroke: var(--bg); stroke-width: 2; }
+a { color: var(--link); }
+footer { border-top: 1px solid var(--rule); margin-top: 3rem; padding-top: 1rem;
+         color: var(--muted); font-size: 0.9rem; }
+</style>
+</head>
+<body>
+{% block body %}{% endblock %}
+</body>
+</html>

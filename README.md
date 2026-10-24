@@ -21,6 +21,19 @@ from the repository.
 - `just ingest --from 2026-09-01`: activities, wellness, and the comments and `#fuel` intake on those activities (`--no-comments` skips them).
 - `just comments --from 2026-09-01`: comments and `#fuel` intake only, for activities already ingested.
 - `just seed --file evals/priors.yaml`: load a seed file into the claims store; claims stay candidates until confirmed through the claims MCP (`--activate` skips that gate).
+- `just web`: the web console, see below.
+
+## Web console
+
+`just web` starts the web console beside the database at
+`http://127.0.0.1:8000/claims`: every claim with its confidence, hit rate,
+error against its pre-registered range and calibration flags, a strip of
+predicted range against observed value per claim, and stated confidence
+against observed hit rate. `/claims.json` has the same data. It binds to
+localhost only and mounts `$DOMESTIQUE_HOME` read-only; the page is full of
+personal data, so it is never published. `just eval --html evals/out/claims.html`
+writes the same page for the synthetic fixture season. Details in
+[docs/stack.md](docs/stack.md#web-console).
 
 ## Layout
 

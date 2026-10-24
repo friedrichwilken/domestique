@@ -14,5 +14,29 @@ services:
       interval: 3s
       timeout: 3s
       retries: 20
+  # Web console: claims report as HTML and JSON. Published on the loopback
+  # interface only; the page is full of personal data and is never exposed.
+  app:
+    build: .
+    ports:
+      - "127.0.0.1:${DOMESTIQUE_WEB_PORT:-8000}:8000"
+    volumes:
+      - "${DOMESTIQUE_HOME:-~/.config/domestique}:/config:ro"
+    environment:
+      DOMESTIQUE_HOME: /config
+      DOMESTIQUE_DSN: postgresql://domestique:domestique@db:5432/domestique
+      # 0.0.0.0 inside the container's own network only; the publish above is loopback.
+      DOMESTIQUE_WEB_HOST: 0.0.0.0
+      # passed through from the host environment, never baked into the image
+      ICU_API_KEY:
+      DOMESTIQUE_HUMAN_TOKEN:
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz')"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
 volumes:
   pgdata:
