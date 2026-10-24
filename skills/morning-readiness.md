@@ -20,7 +20,7 @@ It does not change the plan.
 |---|---|
 | Last night: HRV, resting HR, sleep duration and score, CTL/ATL | `wellness`, written by `domestique.ingest.icu` (`map_wellness`) |
 | Baselines (HRV and others), bedtime, `hr_max` | `config.load()` from `$DOMESTIQUE_HOME/config.yaml` |
-| Rails results for today | `rails.registry.evaluate(day, baselines, limits)` with `limits_from_intent(intent.rails)`; `DayData` is built by the caller (no database loader yet) |
+| Rails results for today | `rails.registry.evaluate(day, baselines, limits)` with `limits_from_intent(intent.rails)`; `DayData` from `rails.load.load_day` |
 | Intent: goals, constraints, overrides | `intent.loader.load_intent_from_config()` |
 | Today's planned sessions | `ingest.plan_store.PgPlanStore.planned_on(athlete_id, day)` |
 | Predictions already registered for today | `predictions` rows from `python -m domestique.loop.predict --date D` |
