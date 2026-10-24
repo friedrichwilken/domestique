@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from domestique.claims.gate import HumanTokenError
 from domestique.claims.store import ClaimNotFoundError, MemoryStore
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -93,9 +94,9 @@ def test_confirm_refuses_without_token(server, monkeypatch):
     monkeypatch.setenv("DOMESTIQUE_HUMAN_TOKEN", "secret")
     c = server.propose_claim("a", "x", "prior", "day", [])
     assert c["status"] == "candidate"
-    with pytest.raises(server.HumanTokenError):
+    with pytest.raises(HumanTokenError):
         server.confirm_or_retire(c["id"], "active", "r", "wrong")
-    with pytest.raises(server.HumanTokenError):
+    with pytest.raises(HumanTokenError):
         server.confirm_or_retire(c["id"], "active", "r", "")
     assert server.query_claims(status="active") == []
     out = server.confirm_or_retire(c["id"], "active", "r", "secret")
@@ -105,7 +106,7 @@ def test_confirm_refuses_without_token(server, monkeypatch):
 def test_confirm_disabled_when_env_unset(server, monkeypatch):
     monkeypatch.delenv("DOMESTIQUE_HUMAN_TOKEN", raising=False)
     c = server.propose_claim("a", "x", "prior", "day", [])
-    with pytest.raises(server.HumanTokenError):
+    with pytest.raises(HumanTokenError):
         server.confirm_or_retire(c["id"], "active", "r", "")
 
 
@@ -117,7 +118,7 @@ def test_clear_flags_is_human_gated_and_starts_a_new_window(server, monkeypatch)
         store.query_claims()[0], uninformative=True, overconfident=True, calib_scored=12
     )
     store.record_adjustment(flagged, "flagged", "test")
-    with pytest.raises(server.HumanTokenError):
+    with pytest.raises(HumanTokenError):
         server.clear_flags(c["id"], "range narrowed", "wrong")
     assert server.query_claims()[0]["uninformative"] is True
     out = server.clear_flags(c["id"], "range narrowed", "secret")

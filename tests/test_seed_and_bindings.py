@@ -9,6 +9,7 @@ import pytest
 
 from domestique import db
 from domestique.claims import seed as seed_cli
+from domestique.claims.gate import HumanTokenError
 from domestique.claims.seed import load_seed, parse_seed, read_seed
 from domestique.claims.store import MemoryStore
 from domestique.loop.model import Metric
@@ -98,7 +99,7 @@ def test_add_binding_on_an_active_claim_is_human_gated(server, monkeypatch):
     monkeypatch.setenv("DOMESTIQUE_HUMAN_TOKEN", "secret")
     c = mod.propose_claim("a", "x", "prior", "day", [])
     mod.confirm_or_retire(c["id"], "active", "r", "secret")
-    with pytest.raises(mod.HumanTokenError):
+    with pytest.raises(HumanTokenError):
         mod.add_binding(c["id"], "peak_hr", {"offset": 5, "range_abs": 4})
     assert loop.bindings("a") == []
     mod.add_binding(c["id"], "peak_hr", {"offset": 5, "range_abs": 4}, human_token="secret")
