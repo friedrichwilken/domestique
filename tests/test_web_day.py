@@ -17,6 +17,7 @@ from domestique.web.queries import ReportData
 
 ATHLETE = "iTest"
 DAY = date(2026, 9, 9)
+DAY_TS = datetime(2026, 9, 9, 21, tzinfo=UTC)
 SETTINGS = DaySettings(baselines={"hrv": 80.0}, hr_max=190.0, margin_pp=5.0)
 PLAN = {
     "id": 2,
@@ -144,3 +145,33 @@ def test_day_without_date_redirects_to_today_and_the_provider_gets_the_date():
 def test_bad_date_is_rejected():
     with client_for(lambda d: pytest.fail("not reached")) as c:
         assert c.get("/day/not-a-date").status_code == 422
+
+
+# --- chat-layer 1.1: the routes the model reads ------------------------------------
+
+
+def test_day_json_carries_the_rail_wording_and_question_text_verbatim(stopped):
+    wording = joint_pain(DayData(DAY, subjective_tags=("joint-pain",)), {}).wording
+    with client_for(lambda d: stopped) as c:
+        body = c.get(f"/day/{DAY}.json").json()
+    assert body["rails"][0]["wording"] == wording
+    assert body["questions"][0]["text"] == overshoot_text()
+
+
+def test_questions_json_lists_every_open_question_verbatim():
+    open_qs = [asked(overshoot_text()), OpenQuestion("q-2", "reviewer", "Second?", DAY_TS)]
+    app = create_app(
+        WebSettings(ATHLETE, None),
+        report=lambda: ReportData(ATHLETE, ()),
+        day=lambda d: pytest.fail("not used"),
+        store=lambda: pytest.fail("not used"),
+        questions=lambda: open_qs,
+    )
+    with TestClient(app) as c:
+        body = c.get("/questions.json").json()
+    assert body["athlete_id"] == ATHLETE
+    assert [(q["id"], q["for"], q["text"]) for q in body["questions"]] == [
+        ("q-1", "athlete", overshoot_text()),
+        ("q-2", "reviewer", "Second?"),
+    ]
+    assert body["questions"][1]["created_at"] == DAY_TS.isoformat()

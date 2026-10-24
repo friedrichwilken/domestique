@@ -53,6 +53,27 @@
         {% endif %}
       </td>
     </tr>
+    {% set history = histories[loop.index0] %}
+    <tr class="history" id="history-{{ r.id }}">
+      <td></td>
+      <td colspan="10">
+        <details>
+          <summary>history ({{ history|length }})</summary>
+          {% if history %}
+          <ol class="history">
+          {% for h in history %}
+            <li><time datetime="{{ h.ts.isoformat() }}">{{ h.ts.strftime("%Y-%m-%d %H:%M") }}</time>
+              {{ h.status.value }}, confidence {{ "%.2f"|format(h.confidence) }}, by {{ h.by }}:
+              <span class="reason">{{ h.reason }}</span></li>
+          {% endfor %}
+          </ol>
+          {% else %}
+          <p class="muted">No history recorded.</p>
+          {% endif %}
+          <a href="/claims/{{ r.id }}/history.json">JSON</a>
+        </details>
+      </td>
+    </tr>
   {% endfor %}
   </tbody>
 </table>

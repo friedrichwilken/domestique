@@ -120,6 +120,18 @@ def open_questions(
     return [OpenQuestion(str(r[0]), str(r[1]), str(r[2]), r[3]) for r in rows]
 
 
+_ALL_OPEN_QUESTIONS_SQL = (
+    'SELECT id, "for", text, created_at FROM questions '
+    "WHERE athlete_id = %s AND status = 'open' ORDER BY created_at, id"
+)
+
+
+def all_open_questions(conn: db.Conn, athlete_id: str) -> list[OpenQuestion]:
+    """Every open question for the athlete, oldest first, whatever day it belongs to."""
+    rows = conn.execute(_ALL_OPEN_QUESTIONS_SQL, (athlete_id,)).fetchall()
+    return [OpenQuestion(str(r[0]), str(r[1]), str(r[2]), r[3]) for r in rows]
+
+
 def load_day_view(conn: db.Conn, athlete_id: str, day: date, settings: DaySettings) -> DayView:
     data = load_day(conn, athlete_id, day, settings.timezone)
     questions = open_questions(conn, athlete_id, day, settings.timezone)
@@ -187,6 +199,10 @@ def _session_json(row: JoinRow) -> dict[str, object]:
     }
 
 
+def question_json(q: OpenQuestion) -> dict[str, object]:
+    return {"id": q.id, "for": q.for_, "text": q.text, "created_at": q.created_at.isoformat()}
+
+
 def as_json(view: DayView) -> dict[str, object]:
     """The day as JSON-ready values; ``plan_vs_execution`` is null when a rail withholds it."""
     withheld = view.withheld_by
@@ -196,8 +212,10 @@ def as_json(view: DayView) -> dict[str, object]:
         "rails": [asdict(r) for r in view.rails],
         "analysis_withheld_by": list(withheld),
         "plan_vs_execution": None if withheld else [_session_json(r) for r in view.sessions],
-        "questions": [
-            {"id": q.id, "for": q.for_, "text": q.text, "created_at": q.created_at.isoformat()}
-            for q in view.questions
-        ],
+        "questions": [question_json(q) for q in view.questions],
     }
+
+
+def questions_json(athlete_id: str, questions: Sequence[OpenQuestion]) -> dict[str, object]:
+    """Open questions as JSON-ready values, text unchanged."""
+    return {"athlete_id": athlete_id, "questions": [question_json(q) for q in questions]}

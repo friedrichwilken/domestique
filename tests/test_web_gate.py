@@ -137,3 +137,38 @@ def test_page_has_a_decide_form_per_candidate_and_a_clear_form_per_flagged_row(s
     row = _row(page, flagged.id)
     assert f'action="/claims/{flagged.id}/clear-flags"' in row and "/decide" not in row
     assert page.count('type="password"') == 2
+
+
+# --- chat-layer 1.2: the history after a decision -----------------------------------
+
+
+def test_history_json_after_a_decision_carries_reason_and_by(client, store):
+    c = candidate(store)
+    client.post(
+        f"/claims/{c.id}/decide",
+        data={"status": "retired", "reason": "did not hold", "token": TOKEN},
+    )
+    body = client.get(f"/claims/{c.id}/history.json").json()
+    assert body["claim_id"] == c.id
+    assert [(h["reason"], h["by"], h["status"]) for h in body["history"]] == [
+        ("proposed", "test", "candidate"),
+        ("did not hold", "console", "retired"),
+    ]
+    assert client.get("/claims/nope/history.json").status_code == 404
+
+
+def test_page_shows_each_claims_history_collapsed_under_its_row(client, store):
+    c = candidate(store)
+    client.post(
+        f"/claims/{c.id}/decide",
+        data={"status": "active", "reason": "held & checked", "token": TOKEN},
+    )
+    data = ReportData(
+        ATHLETE, tuple(claim_report(x, (), store.history(x.id)) for x in store.query_claims())
+    )
+    page = claims_page(data)
+    block = re.search(rf'<tr class="history" id="history-{c.id}">.*?</tr>', page, re.S).group(0)
+    assert "<details>" in block and "<details open" not in block
+    assert "history (2)" in block
+    assert "by console" in block and "held &amp; checked" in block
+    assert page.count('<tr class="claim"') == 1

@@ -2,7 +2,8 @@
 
 ## 1. Console routes for the model
 
-- [ ] 1.1 `/day/{date}.json` and `/questions.json` in `domestique.web` with the same data as the HTML pages; test: fixture day returns the rail wording and the question text verbatim in JSON
+- [x] 1.1 `/day/{date}.json` and `/questions.json` in `domestique.web` with the same data as the HTML pages; test: fixture day returns the rail wording and the question text verbatim in JSON
+- [x] 1.2 Claim history on the console: `GET /claims/{id}/history.json` with the store's `history()` rows, and a collapsed history list under each claim row on the claims page, so a decision made through the gate is visible afterwards; test: after a decide POST with the correct token, the history JSON carries the reason and `by="console"`
 
 ## 2. Chat service
 
