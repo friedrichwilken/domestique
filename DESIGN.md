@@ -189,6 +189,14 @@ shape with a synthetic athlete.
 
 ## Interfaces
 
+- **Web console.** All deterministic parts run as one service beside the
+  database (`domestique.web`): the claims report (confidence, hit rate, error
+  per prediction drawn against its pre-registered range), the day view (rails,
+  plan versus execution, open questions) and the human gate as a form. Server
+  rendered, inline SVG, bound to localhost; it holds no language-model
+  dependency. Any chat layer (Chainlit or another client) talks to this
+  service's JSON routes and to the MCP servers; the model never reaches the
+  database directly.
 - One question after each ride (Telegram/Slack bot). Much of what explains a
   session is said in passing; without this channel the system learns only
   from numbers and stays by-the-book.
