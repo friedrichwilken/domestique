@@ -3,7 +3,17 @@ name = "domestique"
 version = "0.0.0"
 description = "Training-analysis assistant for endurance athletes: the athlete stays in charge."
 requires-python = ">=3.12"
-dependencies = ["httpx", "psycopg[binary]", "pydantic", "pyyaml", "anthropic", "mcp>=1.2,<2"]
+dependencies = [
+  "httpx",
+  "psycopg[binary]",
+  "pydantic",
+  "pyyaml",
+  "anthropic",
+  "mcp>=1.2,<2",
+  "fastapi>=0.115,<1",
+  "jinja2>=3.1,<4",
+  "uvicorn>=0.30,<1",
+]
 
 [project.optional-dependencies]
 dev = ["pytest", "ruff==0.17.2", "mypy", "pre-commit", "types-PyYAML"]
@@ -14,6 +24,9 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"domestique.web" = ["templates/*.html"]
 
 [tool.ruff]
 line-length = 100

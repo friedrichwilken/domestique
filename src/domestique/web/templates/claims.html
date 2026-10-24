@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Claims report{% endblock %}
+{% block body %}
+<h1>Claims report</h1>
+<p class="muted">
+  {{ rows|length }} claims. Scored and hit rate count official and shadow predictions.
+  Error share is the mean absolute error over the mean range half-width in the current
+  calibration window.
+  {% if shadows %}<a href="?shadows=0">Hide shadow predictions</a>{% else %}<a href="?shadows=1">Show shadow predictions</a>{% endif %}
+  &middot; <a href="claims.json">JSON</a>
+</p>
+
+<div class="scroll">
+<table class="claims">
+  <thead>
+    <tr>
+      <th class="num">#</th><th>claim</th><th>status</th><th>layer</th><th>horizon</th>
+      <th class="num">confidence</th><th class="num">scored</th><th class="num">hit rate</th>
+      <th class="num">error share</th><th>flags</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for r in rows %}
+    <tr class="claim" id="row-{{ r.id }}">
+      <td class="num">{{ r.number }}</td>
+      <td><a href="#claim-{{ r.id }}">{{ r.text }}</a></td>
+      <td>{{ r.status }}</td><td>{{ r.source_layer }}</td><td>{{ r.horizon }}</td>
+      <td class="num">{{ r.confidence }}</td><td class="num">{{ r.scored }}</td>
+      <td class="num">{{ r.hit_rate }}</td><td class="num">{{ r.error_share }}</td>
+      <td>{% for f in r.flags %}<span class="flag">{{ f }}</span>{% endfor %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<h2>Stated confidence against observed hit rate</h2>
+<p class="muted">One marker per claim with at least one scored prediction, numbered as in the
+  table, sized by scored count. The dashed diagonal is where stated confidence equals the
+  observed hit rate. Claims with fewer than ten scored predictions are labelled early.</p>
+{{ scatter }}
+
+<h2>Calibration strips</h2>
+<p class="muted">Per scored prediction: the pre-registered range as a band, the observed value as
+  a marker. Filled circle: hit. Hollow circle with a label: miss, labelled with its distance
+  to the range. Lighter: shadow prediction. Most recent sixty per claim; the JSON has all.</p>
+{% for s in sections %}
+<section class="claim-strip" id="claim-{{ s.row.id }}">
+  <h3>#{{ s.row.number }} {{ s.row.text }}</h3>
+  <div class="scroll">{{ s.strip }}</div>
+</section>
+{% endfor %}
+
+<footer>
+  <p><strong>What this cannot learn</strong> (from DESIGN.md):</p>
+  <ul>
+  {% for title, sentence in cannot_learn %}
+    <li><strong>{{ title }}</strong> {{ sentence }}</li>
+  {% endfor %}
+  </ul>
+</footer>
+{% endblock %}

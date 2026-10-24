@@ -1,0 +1,7 @@
+# Only pyproject.toml, src/ and migrations/ go into the image.
+*
+!pyproject.toml
+!src/
+!migrations/
+**/__pycache__
+**/*.egg-info
