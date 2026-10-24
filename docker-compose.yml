@@ -1,3 +1,5 @@
+# Pinned so compose from any worktree reuses this one stack and its database port.
+name: domestique
 services:
   db:
     image: timescale/timescaledb-ha:pg16
