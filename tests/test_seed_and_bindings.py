@@ -1,10 +1,14 @@
 """Seed loader with bindings, and the claims MCP add_binding tool."""
 
 import importlib.util
+import os
+import uuid
 from pathlib import Path
 
 import pytest
 
+from domestique import db
+from domestique.claims import seed as seed_cli
 from domestique.claims.seed import load_seed, parse_seed, read_seed
 from domestique.claims.store import MemoryStore
 from domestique.loop.model import Metric
@@ -111,3 +115,68 @@ def test_add_binding_validates_before_writing(server):
     with pytest.raises(mod.ClaimNotFoundError):
         mod.add_binding("nope", "peak_hr", {"range_abs": 4})
     assert loop.bindings("a") == []
+
+
+# --- seed command line -------------------------------------------------------
+
+TWO_CLAIMS = """\
+athlete_id: athlete-synth-2
+claims:
+  - text: "Peak heart rate runs a few beats above the prescribed band."
+    source_layer: prior
+    horizon: day
+    confidence: 0.5
+    evidence:
+      - {kind: reference, ref: textbook-hr-peaks}
+    bindings:
+      - metric: peak_hr
+        params: {offset: 5, range_abs: 4}
+  - text: "Sleep after an easy session stays at the recent median."
+    source_layer: prior
+    horizon: day
+    confidence: 0.5
+    evidence:
+      - {kind: reference, ref: textbook-exercise-sleep-null}
+    bindings:
+      - metric: sleep_hours
+        params: {range_abs: 0.3}
+        conditions: {max_if: 0.84}
+"""
+
+
+def test_seed_args_default_to_not_activated():
+    args = seed_cli.parse_args(["--file", "evals/priors.yaml"])
+    assert (args.file, args.activate, args.athlete_id) == (Path("evals/priors.yaml"), False, None)
+    args = seed_cli.parse_args(["--file", "x.yaml", "--activate", "--athlete-id", "iZ"])
+    assert (args.activate, args.athlete_id) == (True, "iZ")
+    with pytest.raises(SystemExit):
+        seed_cli.parse_args([])
+
+
+def test_seed_athlete_id_flag_wins_over_environment():
+    env = {"ICU_ATHLETE_ID": "iEnv", "DOMESTIQUE_DSN": "postgresql://env/db"}
+    args = seed_cli.parse_args(["--file", "x.yaml"])
+    assert seed_cli.settings(args, env) == ("iEnv", "postgresql://env/db")
+    args = seed_cli.parse_args(["--file", "x.yaml", "--athlete-id", "iFlag"])
+    assert seed_cli.settings(args, env) == ("iFlag", "postgresql://env/db")
+
+
+@pytest.mark.skipif(not os.environ.get("DOMESTIQUE_TEST_DSN"), reason="needs a Postgres DSN")
+def test_seed_command_writes_candidates_and_bindings(tmp_path, capsys):
+    path = tmp_path / "seed.yaml"
+    path.write_text(TWO_CLAIMS)
+    athlete = f"iT{uuid.uuid4().hex[:8]}"
+    dsn = os.environ["DOMESTIQUE_TEST_DSN"]
+    seed_cli.main(["--file", str(path), "--athlete-id", athlete], {"DOMESTIQUE_DSN": dsn})
+    assert capsys.readouterr().out == "seeded 2 claims (candidate), 2 bindings\n"
+    with db.connect(dsn) as conn:
+        statuses = conn.execute(
+            "SELECT status FROM claims WHERE athlete_id = %s", (athlete,)
+        ).fetchall()
+        (n_bindings,) = conn.execute(
+            "SELECT count(*) FROM claim_bindings b JOIN claims c ON c.id = b.claim_id "
+            "WHERE c.athlete_id = %s",
+            (athlete,),
+        ).fetchone()
+    assert statuses == [("candidate",), ("candidate",)]
+    assert n_bindings == 2

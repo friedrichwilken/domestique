@@ -39,3 +39,8 @@ eval *args:
 comments *args:
     docker compose up -d --wait
     .venv/bin/python -m domestique.ingest.icu_comments {{args}}
+
+# load a seed file into the claims store; claims stay candidates unless --activate
+seed *args:
+    docker compose up -d --wait
+    .venv/bin/python -m domestique.claims.seed {{args}}

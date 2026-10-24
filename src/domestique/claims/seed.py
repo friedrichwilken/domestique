@@ -21,19 +21,31 @@ only when the caller asks for ``activate``, confirmed as ``active``. Loading
 into a live store keeps the human gate: leave ``activate`` off and confirm
 through the claims MCP. The replay harness activates its seed in its own
 in-memory stores, which never reach the athlete's claims store.
+
+Usage: python -m domestique.claims.seed --file evals/priors.yaml [--activate] [--athlete-id ID]
+
+The command writes into the configured database for the configured athlete
+(``--athlete-id`` overrides it, as does ``ICU_ATHLETE_ID``; the file's own
+``athlete_id`` is not used). Without ``--activate`` every claim stays a
+candidate until a human confirms it through the claims MCP.
 """
 
 from __future__ import annotations
 
+import argparse
+import os
+import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
 
-from domestique.claims.store import Claim, ClaimsStore, EvidenceInput
+from domestique import db
+from domestique.claims.store import Claim, ClaimsStore, EvidenceInput, PgStore
+from domestique.ingest.settings import cli_settings
 from domestique.loop.model import Binding, parse_binding
-from domestique.loop.store import LoopStore
+from domestique.loop.store import LoopStore, PgLoopStore
 
 SEED_BY = "seed"
 _PLACEHOLDER_ID = "seed"  # bindings are parsed before the claim exists
@@ -163,3 +175,51 @@ def load_seed(
             loop.add_binding(b)
         out.append((c, bound))
     return out
+
+
+# --- command line --------------------------------------------------------------
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    p = argparse.ArgumentParser(description="Load a seed file into the claims store.")
+    p.add_argument("--file", required=True, type=Path, help="seed YAML, e.g. evals/priors.yaml")
+    p.add_argument(
+        "--activate",
+        action="store_true",
+        help="confirm every seeded claim as active (default: they stay candidates)",
+    )
+    p.add_argument("--athlete-id", help="write for this athlete instead of the configured one")
+    return p.parse_args(argv)
+
+
+def settings(
+    args: argparse.Namespace, env: Mapping[str, str] | None = None
+) -> tuple[str, str | None]:
+    """Athlete id and database URL: ``--athlete-id`` first, then the ingest CLIs' rules."""
+    source: Mapping[str, str] = os.environ if env is None else env
+    if args.athlete_id:
+        source = {**source, "ICU_ATHLETE_ID": args.athlete_id}
+    return cli_settings(source)
+
+
+def summary(loaded: list[tuple[Claim, tuple[Binding, ...]]]) -> str:
+    statuses = sorted({c.status.value for c, _ in loaded})
+    n_bindings = sum(len(bs) for _, bs in loaded)
+    return f"seeded {len(loaded)} claims ({', '.join(statuses) or 'none'}), {n_bindings} bindings"
+
+
+def main(argv: list[str] | None = None, env: Mapping[str, str] | None = None) -> None:
+    args = parse_args(argv)
+    seed = read_seed(args.file)  # validate the whole file before connecting
+    athlete_id, dsn = settings(args, env)
+    with db.connect(dsn) as conn:
+        db.migrate(conn)
+        with conn.transaction():  # all claims and bindings, or none
+            loaded = load_seed(
+                seed, PgStore(conn), PgLoopStore(conn), athlete_id, activate=args.activate
+            )
+    sys.stdout.write(summary(loaded) + "\n")
+
+
+if __name__ == "__main__":
+    main()
