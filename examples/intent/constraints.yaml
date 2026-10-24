@@ -8,6 +8,8 @@
   reason: "Observed: evening intensity fragments sleep (claim obs-0003)"
   set_by: athlete
   set_on: 2026-10-01
+  # Claims bound to these metrics are reported as conflicting with this constraint.
+  tags: [peak_hr, sleep_hours]
 - id: work-days
   text: "Office days Mon–Thu; long rides on the weekend"
   set_by: athlete

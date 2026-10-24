@@ -34,6 +34,17 @@ When a constraint and an athlete-model claim conflict, the constraint SHALL win 
 - **WHEN** a claim says evening intensity is well tolerated and a constraint says hard sessions end by 19:00
 - **THEN** the constraint applies and the conflict is reported, not resolved
 
+### Requirement: Conflicts are found through bindings and tags
+A constraint MAY carry `tags` naming the subjects it governs as claim-binding metrics. The system SHALL report one conflict per pair of a tagged constraint and an active claim that has a binding whose metric is among those tags, SHALL NOT match claims to constraints by their text, and SHALL name the constraint as the one that applies and list the claim with its source layer and confidence, in factual wording.
+
+#### Scenario: Observed work-HR tolerance vs a tagged stated constraint
+- **WHEN** an active `observed` claim "tolerates work HR up to X" is bound to `peak_hr` and a constraint set by the athlete is tagged `peak_hr`
+- **THEN** the report returns the constraint as applying and lists the claim as conflicting with source layer `observed` and its confidence
+
+#### Scenario: Shared words without a shared binding
+- **WHEN** a claim's text repeats a constraint's text but none of its bindings has a metric in the constraint's tags
+- **THEN** no conflict is reported
+
 ### Requirement: The system only appends overrides
 The system SHALL append to `overrides.yaml` and SHALL NOT modify goals, constraints or rails files.
 
