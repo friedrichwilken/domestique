@@ -25,7 +25,7 @@ Reasons over computed output only; it computes nothing itself.
 | Plan next to execution | `analysis.plan_vs_execution.plan_vs_execution` rows (`JoinRow`) |
 | Predictions, outcomes, claim adjustments | `loop.score.score_session` output; `predictions`/`outcomes` tables |
 | Claims with source layer, confidence, flags | claims MCP `query_claims(athlete_id, status="active")` |
-| Rails results | `rails.registry.evaluate(day, baselines, limits)`; no loader builds `DayData` from the database yet, the caller supplies it |
+| Rails results | `rails.registry.evaluate(day, baselines, limits)` over `rails.load.load_day(conn, athlete_id, day, timezone)`, or `just rails --date D` |
 
 ## Order of reasoning
 

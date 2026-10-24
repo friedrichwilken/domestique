@@ -44,3 +44,11 @@ comments *args:
 seed *args:
     docker compose up -d --wait
     .venv/bin/python -m domestique.claims.seed {{args}}
+
+# evaluate every safety rail for one day: just rails --date YYYY-MM-DD
+rails *args:
+    .venv/bin/python -m domestique.rails {{args}}
+
+# plan vs execution for one day: just pve --date YYYY-MM-DD [--save]
+pve *args:
+    .venv/bin/python -m domestique.analysis {{args}}
