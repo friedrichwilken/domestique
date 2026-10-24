@@ -52,3 +52,8 @@ rails *args:
 # plan vs execution for one day: just pve --date YYYY-MM-DD [--save]
 pve *args:
     .venv/bin/python -m domestique.analysis {{args}}
+
+# web console (claims report) in a container beside the database, on localhost only
+web:
+    docker compose up -d --wait app
+    @echo "web console: http://127.0.0.1:${DOMESTIQUE_WEB_PORT:-8000}/claims"
