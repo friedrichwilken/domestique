@@ -18,6 +18,6 @@
 
 ## 4. Follow-ups (left open by the first implementation)
 
-- [ ] 4.1 Constraint-vs-claim conflict report: when an active claim and a constraint address the same subject tag, return the constraint and list the claim as conflicting; test: observed-tolerance-vs-stated-constraint scenario
-- [ ] 4.2 `DayData` loader from the database and a `python -m domestique.rails --date` entry that evaluates all rails for a day; test: loader against the compose database
-- [ ] 4.3 `plan_vs_execution` CLI and the overshoot margin read from config; test: margin from config overrides the default
+- [x] 4.1 Constraint-vs-claim conflict report: when an active claim and a constraint address the same subject tag, return the constraint and list the claim as conflicting; test: observed-tolerance-vs-stated-constraint scenario
+- [x] 4.2 `DayData` loader from the database and a `python -m domestique.rails --date` entry that evaluates all rails for a day; test: loader against the compose database
+- [x] 4.3 `plan_vs_execution` CLI and the overshoot margin read from config; test: margin from config overrides the default

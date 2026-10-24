@@ -17,9 +17,8 @@ from typing import Literal
 from psycopg.types.json import Jsonb
 
 from domestique import db
+from domestique.config import DEFAULT_MARGIN_PP
 from domestique.ingest.plan_store import ExecutedSession, PlannedSession, PlanStore, WorkInterval
-
-DEFAULT_MARGIN_PP = 10.0  # percentage points of HRmax
 
 _HR_GUIDANCE = re.compile(
     r"(?P<low>\d{2,3})(?:\s*(?:-|\u2013|to)\s*(?P<high>\d{2,3}))?\s*%\s*"

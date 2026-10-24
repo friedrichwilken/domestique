@@ -34,3 +34,11 @@ db-up:
 # replay eval on the fixture season, loop on; the headline is the last line
 eval *args:
     .venv/bin/python evals/replay.py {{args}}
+
+# evaluate every safety rail for one day: just rails --date YYYY-MM-DD
+rails *args:
+    .venv/bin/python -m domestique.rails {{args}}
+
+# plan vs execution for one day: just pve --date YYYY-MM-DD [--save]
+pve *args:
+    .venv/bin/python -m domestique.analysis {{args}}

@@ -29,6 +29,9 @@ class Constraint(_Entry):
     value: float | str | None = None
     reason: str | None = None
     set_on: date | None = None
+    # Subjects this constraint governs, as claim-binding metric names (e.g. ``peak_hr``).
+    # A claim bound to one of these metrics is reported as conflicting with it.
+    tags: tuple[str, ...] = ()
 
     @model_validator(mode="after")
     def _says_something(self) -> Constraint:
