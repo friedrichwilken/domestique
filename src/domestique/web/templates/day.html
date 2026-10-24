@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Day {{ day }}{% endblock %}
+{% block body %}
+<h1>Day {{ day }}</h1>
+<p class="muted">
+  <a href="/day/{{ previous }}">&larr; {{ previous }}</a> &middot;
+  <a href="/day/{{ following }}">{{ following }} &rarr;</a> &middot;
+  <a href="/day/{{ day }}.json">JSON</a> &middot; <a href="/claims">Claims report</a>
+</p>
+
+<h2>Rails</h2>
+{% if rails %}
+<ul class="rails">
+  {% for r in rails %}
+  <li class="rail" data-rail="{{ r.rail }}" data-action="{{ r.action }}">
+    <strong>{{ r.rail }}</strong> <span class="flag">{{ r.action }}</span>
+    <p class="wording">{{ r.wording }}</p>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="muted">No rail triggered.</p>
+{% endif %}
+
+<h2>Plan versus execution</h2>
+{% if withheld_by %}
+<p class="withheld">Analysis of the day's rides is withheld because the rail {{ withheld_by|join(", ") }} fired.</p>
+{% elif sessions %}
+<div class="scroll">
+<table class="sessions">
+  <thead>
+    <tr>
+      <th>session</th><th>sport</th><th>prescribed</th><th>status</th>
+      <th class="num">NP</th><th class="num">avg HR</th><th class="num">peak HR</th>
+      <th class="num">IF</th><th class="num">work HR</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for s in sessions %}
+    <tr class="session">
+      <td>{{ s.title }}</td><td>{{ s.sport }}</td><td>{{ s.prescribed }}</td><td>{{ s.status }}</td>
+      <td class="num">{{ s.np }}</td><td class="num">{{ s.avg_hr }}</td>
+      <td class="num">{{ s.max_hr }}</td><td class="num">{{ s.intensity }}</td>
+      <td class="num">{{ s.work_hr }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<p class="muted">No planned session.</p>
+{% endif %}
+
+<h2>Open questions</h2>
+{% if questions %}
+<ul class="questions">
+  {% for q in questions %}
+  <li class="question" data-for="{{ q.for_ }}"><p class="text">{{ q.text }}</p>
+    <p class="muted">for {{ q.for_ }}</p></li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="muted">No open question.</p>
+{% endif %}
+{% endblock %}
