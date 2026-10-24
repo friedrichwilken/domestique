@@ -1,8 +1,13 @@
 # Spec Delta
 
-## MODIFIED Requirements
+## REMOVED Requirements
 
 ### Requirement: Ranges that always hit are flagged
+**Reason**: Replaced by range calibration; hit rate alone no longer flags a claim.
+
+## ADDED Requirements
+
+### Requirement: Range calibration flags claims
 When a claim has at least ten scored predictions and its mean absolute error is below one third of its mean half-range, the system SHALL flag the claim as uninformative and SHALL stop raising its confidence until the flag is cleared. When a claim has at least ten scored predictions and a hit rate below 60%, the system SHALL flag it as overconfident and SHALL lower its confidence by one miss step in addition to the normal scoring. Hit rate alone SHALL NOT flag a claim.
 
 #### Scenario: Wide range
@@ -16,8 +21,6 @@ When a claim has at least ten scored predictions and its mean absolute error is 
 #### Scenario: Overconfident claim
 - **WHEN** a claim's ten scored predictions hit five times
 - **THEN** the claim is flagged overconfident and its confidence drops by an extra miss step
-
-## ADDED Requirements
 
 ### Requirement: All applicable claims are scored
 For each metric, the system SHALL record a prediction for every applicable claim, mark exactly one of them as the official prediction by the precedence rule, and SHALL score and adjust confidence for all of them when the outcome arrives.
