@@ -34,3 +34,8 @@ db-up:
 # replay eval on the fixture season, loop on; the headline is the last line
 eval *args:
     .venv/bin/python evals/replay.py {{args}}
+
+# activity comments and #fuel intake only (just ingest already includes them)
+comments *args:
+    docker compose up -d --wait
+    .venv/bin/python -m domestique.ingest.icu_comments {{args}}

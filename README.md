@@ -16,6 +16,11 @@ All athlete-specific configuration lives outside the repo in
 environment variables, see `.env.example`. Nothing personal is ever read
 from the repository.
 
+## Running
+
+- `just ingest --from 2026-09-01`: activities, wellness, and the comments and `#fuel` intake on those activities (`--no-comments` skips them).
+- `just comments --from 2026-09-01`: comments and `#fuel` intake only, for activities already ingested.
+
 ## Layout
 
 | Path | What |
