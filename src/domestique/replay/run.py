@@ -9,7 +9,8 @@
 the last 182 days up to yesterday). Output goes to ``--out``: ``weekly.csv``,
 ``summary.md`` and, with the loop on, ``review.yaml`` (the bootstrap review
 list; nothing is written to the claims store). The last line printed is the
-headline.
+headline. ``--html PATH`` also writes the claims report page (the web console's
+``/claims``) for the replayed claims.
 """
 
 from __future__ import annotations
@@ -27,6 +28,8 @@ from domestique.replay.fixture import FixtureSeason
 from domestique.replay.harness import RunResult, run_replay
 from domestique.replay.pg import PgSeason, open_readonly
 from domestique.replay.report import headline_line, planted_effect, summary_markdown, weekly_csv
+from domestique.web.pages import claims_page
+from domestique.web.queries import from_replay
 
 DEFAULT_DAYS = 182
 
@@ -46,6 +49,7 @@ def parser(repo: Path) -> argparse.ArgumentParser:
     p.add_argument("--out", type=Path, default=repo / "evals/out")
     p.add_argument("--from", dest="first", type=date.fromisoformat)
     p.add_argument("--to", dest="last", type=date.fromisoformat)
+    p.add_argument("--html", type=Path, help="also write the claims report page to this path")
     return p
 
 
@@ -76,9 +80,17 @@ def replay_db(args: argparse.Namespace) -> Written:
     return write_outputs(result, "ingested history", args.out)
 
 
+def write_html(written: Written, path: Path) -> Written:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(claims_page(from_replay(written.result)))
+    return Written(written.result, (*written.files, path))
+
+
 def main(argv: list[str] | None = None, repo: Path | None = None) -> Written:
     args = parser(repo or Path.cwd()).parse_args(argv)
     written = replay_fixture(args) if args.source == "fixture" else replay_db(args)
+    if args.html is not None:
+        written = write_html(written, args.html)
     planted = planted_effect(written.result)
     lines = [f"wrote {path}" for path in written.files]
     for name, cell in (("first", planted.first), ("second", planted.second)):
