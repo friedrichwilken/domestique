@@ -1,18 +1,23 @@
-"""web-console 1.1: from_db against Postgres. Set DOMESTIQUE_TEST_DSN to a scratch database."""
+"""web-console 1.1, 3.1, 3.2 against Postgres. Set DOMESTIQUE_TEST_DSN to a scratch database."""
 
 import os
 import uuid
+from contextlib import contextmanager
 from dataclasses import replace
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
+from fastapi.testclient import TestClient
+from psycopg.types.json import Jsonb
 
 from domestique import db
 from domestique.claims.store import PgStore
 from domestique.ingest.plan_store import PgPlanStore
 from domestique.loop.model import Metric, Outcome, Prediction
 from domestique.loop.store import PgLoopStore
-from domestique.web.queries import from_db
+from domestique.web.app import DECIDED_BY, WebSettings, create_app
+from domestique.web.day import DaySettings, load_day_view
+from domestique.web.queries import ReportData, from_db
 
 pytestmark = pytest.mark.skipif(
     not os.environ.get("DOMESTIQUE_TEST_DSN"), reason="needs a Postgres DSN"
@@ -99,3 +104,90 @@ def test_from_db_two_claims_three_scored_predictions(conn, athlete):
         (False, 95.0, 105.0, 100.0)
     ]
     assert b.error_share is None
+
+
+# --- web-console 3.1: the day loader ---------------------------------------------
+
+TOKEN = "synthetic-token"
+OVERSHOOT = "Did the session as ridden match what you intended for it?"
+
+
+def question(conn, athlete, text, context=None, status="open"):
+    conn.execute(
+        'INSERT INTO questions (athlete_id, "for", text, context, status) '
+        "VALUES (%s, 'athlete', %s, %s, %s)",
+        (athlete, text, Jsonb(context or {}), status),
+    )
+
+
+def test_day_loader_reads_rails_and_the_days_open_questions(conn, athlete):
+    conn.execute(
+        "INSERT INTO subjective (athlete_id, ts, tags) VALUES (%s, %s, %s)",
+        (athlete, datetime(2026, 9, 9, 12, tzinfo=UTC), ["joint-pain"]),
+    )
+    session(conn, athlete, DAY)
+    question(conn, athlete, OVERSHOOT, {"date": DAY.isoformat()})
+    question(conn, athlete, "answered already", {"date": DAY.isoformat()}, status="answered")
+    question(conn, athlete, "another day", {"date": (DAY + timedelta(days=1)).isoformat()})
+    question(conn, f"{athlete}x", "another athlete", {"date": DAY.isoformat()})
+
+    view = load_day_view(conn, athlete, DAY, DaySettings())
+
+    assert [(r.rail, r.action) for r in view.rails] == [("joint-pain", "stop_plan")]
+    assert view.withheld_by == ("joint-pain",) and view.sessions == ()
+    assert [q.text for q in view.questions] == [OVERSHOOT]
+
+
+def test_day_loader_joins_the_plan_on_a_quiet_day(conn, athlete):
+    session(conn, athlete, DAY)
+    question(conn, athlete, "asked today, no date in its context")  # created now: not DAY
+
+    view = load_day_view(conn, athlete, DAY, DaySettings(hr_max=190.0))
+
+    assert view.rails == () and view.questions == ()
+    (row,) = view.sessions
+    assert row.planned.title == "Endurance" and row.status == "missed"
+
+
+# --- web-console 3.2: the gate through the Postgres store ---------------------------
+
+
+@pytest.fixture
+def gate(conn, monkeypatch):
+    """The app's gate over PgStore on the test connection, rolled back afterwards."""
+    monkeypatch.setenv("DOMESTIQUE_HUMAN_TOKEN", TOKEN)
+
+    @contextmanager
+    def provide():
+        yield PgStore(conn)
+
+    app = create_app(
+        WebSettings("unused", None),
+        report=lambda: ReportData("unused", ()),
+        day=lambda d: pytest.fail("not used"),
+        store=provide,
+    )
+    with TestClient(app) as c:
+        yield c
+
+
+def test_gate_confirms_a_candidate_in_postgres(gate, conn, athlete):
+    claims = PgStore(conn)
+    c = claims.propose_claim(athlete, "synthetic", "prior", "day", [], "test")
+    wrong = gate.post(
+        f"/claims/{c.id}/decide", data={"status": "active", "reason": "r", "token": "nope"}
+    )
+    assert wrong.status_code == 403
+    assert claims.query_claims(athlete_id=athlete)[0].status == "candidate"
+    assert [h.reason for h in claims.history(c.id)] == ["proposed"]
+
+    ok = gate.post(
+        f"/claims/{c.id}/decide",
+        data={"status": "active", "reason": "held up", "token": TOKEN},
+        follow_redirects=False,
+    )
+
+    assert ok.status_code == 303
+    assert claims.query_claims(athlete_id=athlete)[0].status == "active"
+    last = claims.history(c.id)[-1]
+    assert (last.reason, last.by, last.status) == ("held up", DECIDED_BY, "active")

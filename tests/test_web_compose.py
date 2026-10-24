@@ -49,3 +49,7 @@ def test_rendered_compose_publishes_on_loopback_only_and_mounts_read_only():
     assert [p["target"] for p in app["ports"]] == [8000]
     (volume,) = app["volumes"]
     assert volume["target"] == "/config" and volume["read_only"] is True
+
+
+def test_compose_project_name_is_pinned_so_worktrees_share_one_stack():
+    assert yaml.safe_load((ROOT / "docker-compose.yml").read_text())["name"] == "domestique"

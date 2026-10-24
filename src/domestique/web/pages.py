@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import timedelta
 
 from jinja2 import Environment, PackageLoader, select_autoescape
 from markupsafe import Markup
 
-from domestique.web import charts
+from domestique.web import charts, day
 from domestique.web.queries import ReportData
 
 # DESIGN.md, "What this cannot learn": each bullet's title and its first sentence,
@@ -56,4 +57,17 @@ def claims_page(data: ReportData, shadows: bool = True) -> str:
         scatter=Markup(charts.confidence_vs_hit_rate(data)),
         shadows=shadows,
         cannot_learn=CANNOT_LEARN,
+    )
+
+
+def day_page(view: day.DayView) -> str:
+    """Rails (withholding ones first), plan versus execution unless withheld, open questions."""
+    return _ENV.get_template("day.html").render(
+        day=view.day.isoformat(),
+        previous=(view.day - timedelta(days=1)).isoformat(),
+        following=(view.day + timedelta(days=1)).isoformat(),
+        rails=view.rails,
+        withheld_by=view.withheld_by,
+        sessions=day.session_rows(view),
+        questions=view.questions,
     )

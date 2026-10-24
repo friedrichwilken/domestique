@@ -7,8 +7,10 @@
   Error share is the mean absolute error over the mean range half-width in the current
   calibration window.
   {% if shadows %}<a href="?shadows=0">Hide shadow predictions</a>{% else %}<a href="?shadows=1">Show shadow predictions</a>{% endif %}
-  &middot; <a href="claims.json">JSON</a>
+  &middot; <a href="claims.json">JSON</a> &middot; <a href="/day">Today</a>
 </p>
+<p class="muted">Confirming, retiring and clearing flags need the human token
+  (<code>DOMESTIQUE_HUMAN_TOKEN</code>); each decision is written to the claim's history.</p>
 
 <div class="scroll">
 <table class="claims">
@@ -16,7 +18,7 @@
     <tr>
       <th class="num">#</th><th>claim</th><th>status</th><th>layer</th><th>horizon</th>
       <th class="num">confidence</th><th class="num">scored</th><th class="num">hit rate</th>
-      <th class="num">error share</th><th>flags</th>
+      <th class="num">error share</th><th>flags</th><th>human gate</th>
     </tr>
   </thead>
   <tbody>
@@ -28,6 +30,28 @@
       <td class="num">{{ r.confidence }}</td><td class="num">{{ r.scored }}</td>
       <td class="num">{{ r.hit_rate }}</td><td class="num">{{ r.error_share }}</td>
       <td>{% for f in r.flags %}<span class="flag">{{ f }}</span>{% endfor %}</td>
+      <td>
+        {% if r.status == "candidate" %}
+        <form class="decide" method="post" action="/claims/{{ r.id }}/decide">
+          <select name="status" aria-label="decision">
+            <option value="active">confirm (active)</option>
+            <option value="retired">retire</option>
+          </select>
+          <input name="reason" required placeholder="reason" aria-label="reason">
+          <input name="token" type="password" required autocomplete="off"
+                 placeholder="human token" aria-label="human token">
+          <button type="submit">decide</button>
+        </form>
+        {% endif %}
+        {% if r.flags %}
+        <form class="clear-flags" method="post" action="/claims/{{ r.id }}/clear-flags">
+          <input name="reason" required placeholder="reason" aria-label="reason">
+          <input name="token" type="password" required autocomplete="off"
+                 placeholder="human token" aria-label="human token">
+          <button type="submit">clear flags</button>
+        </form>
+        {% endif %}
+      </td>
     </tr>
   {% endfor %}
   </tbody>

@@ -9,7 +9,6 @@ DOMESTIQUE_DATABASE_URL. See README.md.
 
 from __future__ import annotations
 
-import hmac
 import os
 from dataclasses import asdict
 from typing import Any
@@ -17,6 +16,7 @@ from typing import Any
 import psycopg
 from mcp.server.fastmcp import FastMCP
 
+from domestique.claims.gate import require_human
 from domestique.claims.rules import Status
 from domestique.claims.store import (
     Claim,
@@ -33,10 +33,6 @@ mcp = FastMCP("domestique-claims")
 AGENT = "agent:claims-mcp"
 
 
-class HumanTokenError(PermissionError):
-    pass
-
-
 class _StoreHolder:
     """The process-wide stores: created lazily from the environment, replaceable for tests."""
 
@@ -46,14 +42,6 @@ class _StoreHolder:
 
 
 _holder = _StoreHolder()
-
-
-def require_human(token: str | None, tool: str = "confirm_or_retire") -> None:
-    expected = os.environ.get("DOMESTIQUE_HUMAN_TOKEN", "")
-    if not expected:
-        raise HumanTokenError(f"DOMESTIQUE_HUMAN_TOKEN is not set; {tool} is disabled")
-    if not token or not hmac.compare_digest(token.encode(), expected.encode()):
-        raise HumanTokenError(f"a valid human token is required for {tool}")
 
 
 def _conn() -> psycopg.Connection[tuple[Any, ...]]:

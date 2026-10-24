@@ -65,7 +65,12 @@ REPORT = ReportData(
 
 @pytest.fixture
 def client():
-    app = create_app(WebSettings("athlete-synth-1", None), report=lambda: REPORT)
+    app = create_app(
+        WebSettings("athlete-synth-1", None),
+        report=lambda: REPORT,
+        day=lambda d: pytest.fail("not used"),
+        store=lambda: pytest.fail("not used"),
+    )
     with TestClient(app) as c:
         yield c
 
