@@ -1,7 +1,7 @@
 """The web console's HTTP application.
 
 ``create_app`` takes the settings and, for tests, providers for the report,
-the day view, today's date and the claims store; each one left out reads the
+the day view, the open questions, today's date and the claims store; each one left out reads the
 database (read-only for the report and the day view) or the config. Routes:
 
 - ``GET /healthz``: ``{"ok": true}``
@@ -9,6 +9,8 @@ database (read-only for the report and the day view) or the config. Routes:
 - ``GET /claims``: the claims report page; ``?shadows=0`` hides shadow predictions
 - ``GET /day``: redirect to today in the configured timezone
 - ``GET /day/{date}`` and ``GET /day/{date}.json``: rails, plan versus execution, open questions
+- ``GET /questions.json``: every open question for the athlete, text unchanged
+- ``GET /claims/{id}/history.json``: the claim's history rows from the claims store
 - ``POST /claims/{id}/decide`` (form: ``status``, ``reason``, ``token``) and
   ``POST /claims/{id}/clear-flags`` (form: ``reason``, ``token``): the human gate.
   The token is read from the form body only and checked by
@@ -18,7 +20,7 @@ database (read-only for the report and the day view) or the config. Routes:
 from __future__ import annotations
 
 import os
-from collections.abc import AsyncIterator, Callable, Iterator, Mapping
+from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -36,10 +38,11 @@ from domestique.ingest.settings import cli_settings
 from domestique.replay.pg import open_readonly
 from domestique.web import day as day_view
 from domestique.web.pages import claims_page, day_page
-from domestique.web.queries import ReportData, as_json, from_db
+from domestique.web.queries import ReportData, as_json, from_db, history_json
 
 type ReportProvider = Callable[[], ReportData]
 type DayProvider = Callable[[date], day_view.DayView]
+type QuestionsProvider = Callable[[], Sequence[day_view.OpenQuestion]]
 type TodayProvider = Callable[[], date]
 type StoreProvider = Callable[[], AbstractContextManager[ClaimsStore]]
 
@@ -74,6 +77,14 @@ def db_day_provider(settings: WebSettings) -> DayProvider:
         s = day_view.day_settings(config.load())
         with open_readonly(settings.dsn) as conn:
             return day_view.load_day_view(conn, settings.athlete_id, day, s)
+
+    return provide
+
+
+def db_questions_provider(settings: WebSettings) -> QuestionsProvider:
+    def provide() -> Sequence[day_view.OpenQuestion]:
+        with open_readonly(settings.dsn) as conn:
+            return day_view.all_open_questions(conn, settings.athlete_id)
 
     return provide
 
@@ -141,6 +152,24 @@ def _add_read_routes(
         return HTMLResponse(day_page(day(on)))
 
 
+def _add_client_routes(
+    app: FastAPI, settings: WebSettings, questions: QuestionsProvider, store: StoreProvider
+) -> None:
+    """JSON for clients that read without HTML (the chat layer)."""
+
+    @app.get("/questions.json")
+    def questions_json() -> JSONResponse:
+        return JSONResponse(day_view.questions_json(settings.athlete_id, questions()))
+
+    @app.get("/claims/{claim_id}/history.json")
+    def history(claim_id: str) -> JSONResponse:
+        with store() as s:
+            rows = s.history(claim_id)
+        if not rows:  # every claim has at least its proposal row
+            raise HTTPException(status_code=404, detail="no such claim")
+        return JSONResponse({"claim_id": claim_id, "history": history_json(rows)})
+
+
 def _add_gate_routes(app: FastAPI, store: StoreProvider) -> None:
     @app.post("/claims/{claim_id}/decide")
     def decide(
@@ -182,6 +211,7 @@ def create_app(
     day: DayProvider | None = None,
     today: TodayProvider | None = None,
     store: StoreProvider | None = None,
+    questions: QuestionsProvider | None = None,
 ) -> FastAPI:
     uses_db = report is None or day is None or store is None
 
@@ -199,5 +229,7 @@ def create_app(
         day or db_day_provider(settings),
         today or config_today,
     )
-    _add_gate_routes(app, store or pg_store_provider(settings))
+    claims_store = store or pg_store_provider(settings)
+    _add_client_routes(app, settings, questions or db_questions_provider(settings), claims_store)
+    _add_gate_routes(app, claims_store)
     return app

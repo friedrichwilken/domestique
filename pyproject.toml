@@ -17,7 +17,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "ruff==0.17.2", "mypy", "pre-commit", "types-PyYAML"]
+chat = ["chainlit>=2.11,<3"]  # the chat service (chat-layer); anthropic is a core dependency
+dev = ["domestique[chat]", "pytest", "ruff==0.17.2", "mypy", "pre-commit", "types-PyYAML"]
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -84,6 +85,9 @@ strict = true
 files = ["src", "mcp"]
 warn_unreachable = true
 plugins = ["pydantic.mypy"]
+# chainlit ships py.typed, but Message.send/update and user_session.get/set have no
+# annotations; calls into chainlit only are exempt from disallow_untyped_calls.
+untyped_calls_exclude = ["chainlit"]
 
 [[tool.mypy.overrides]]
 module = ["mcp.*", "psycopg.*"]

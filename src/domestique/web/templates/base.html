@@ -31,7 +31,9 @@ svg .claim-point circle { stroke: var(--bg); stroke-width: 2; }
 a { color: var(--link); }
 form.decide, form.clear-flags { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 4px; }
 form input, form select, form button { font: inherit; font-size: 0.85rem; }
-.rails, .questions { padding-left: 1.2rem; }
+.rails, .questions, ol.history { padding-left: 1.2rem; }
+tr.history td { border-bottom: 1px solid var(--rule); padding-top: 0; font-size: 0.85rem; }
+tr.claim td { border-bottom: none; }
 .wording, .withheld, .questions .text { margin: 0.2rem 0 0.6rem; }
 .withheld { font-weight: 600; }
 footer { border-top: 1px solid var(--rule); margin-top: 3rem; padding-top: 1rem;

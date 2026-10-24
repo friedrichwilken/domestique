@@ -16,7 +16,7 @@ from domestique.ingest.plan_store import PgPlanStore
 from domestique.loop.model import Metric, Outcome, Prediction
 from domestique.loop.store import PgLoopStore
 from domestique.web.app import DECIDED_BY, WebSettings, create_app
-from domestique.web.day import DaySettings, load_day_view
+from domestique.web.day import DaySettings, all_open_questions, load_day_view
 from domestique.web.queries import ReportData, from_db
 
 pytestmark = pytest.mark.skipif(
@@ -191,3 +191,26 @@ def test_gate_confirms_a_candidate_in_postgres(gate, conn, athlete):
     assert claims.query_claims(athlete_id=athlete)[0].status == "active"
     last = claims.history(c.id)[-1]
     assert (last.reason, last.by, last.status) == ("held up", DECIDED_BY, "active")
+    # chat-layer 1.2: the decision is visible afterwards, as JSON and in the report
+    body = gate.get(f"/claims/{c.id}/history.json").json()
+    assert [(h["reason"], h["by"]) for h in body["history"]] == [
+        ("proposed", "test"),
+        ("held up", DECIDED_BY),
+    ]
+    (report,) = from_db(conn, athlete).claims
+    assert [h.reason for h in report.history] == ["proposed", "held up"]
+    assert gate.get(f"/claims/{uuid.uuid4()}/history.json").status_code == 404
+
+
+# --- chat-layer 1.1: every open question ------------------------------------------
+
+
+def test_all_open_questions_reads_every_open_question_of_the_athlete(conn, athlete):
+    question(conn, athlete, OVERSHOOT, {"date": DAY.isoformat()})
+    question(conn, athlete, "no date in its context")
+    question(conn, athlete, "answered already", status="answered")
+    question(conn, f"{athlete}x", "another athlete")
+
+    texts = [q.text for q in all_open_questions(conn, athlete)]
+
+    assert sorted(texts) == sorted([OVERSHOOT, "no date in its context"])

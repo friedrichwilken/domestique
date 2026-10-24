@@ -44,7 +44,8 @@ class ClaimSection:
 
 
 def claims_page(data: ReportData, shadows: bool = True) -> str:
-    """The claims report: table, one calibration strip per claim, the scatter, the footer."""
+    """The claims report: table with each claim's history, one calibration strip per claim,
+    the scatter, the footer."""
     rows = charts.claims_table(data)
     # Markup: charts builds the SVG itself and escapes every text value it puts in.
     sections = [
@@ -53,6 +54,7 @@ def claims_page(data: ReportData, shadows: bool = True) -> str:
     ]
     return _ENV.get_template("claims.html").render(
         rows=rows,
+        histories=[c.history for c in data.claims],
         sections=sections,
         scatter=Markup(charts.confidence_vs_hit_rate(data)),
         shadows=shadows,
