@@ -63,3 +63,11 @@ def load_mode(name: str, ctx: ModeContext, directory: Path | None = None) -> Mod
         raise ValueError(f"unknown mode {name!r}; one of {', '.join(MODES)}")
     path = (directory or skills_dir()) / f"{name}.md"
     return Mode(name, prefix(ctx) + path.read_text(encoding="utf-8"))
+
+
+def describe(name: str, directory: Path | None = None) -> str:
+    """The skill file's first paragraph after its heading: the mode's line in the chooser."""
+    text = ((directory or skills_dir()) / f"{name}.md").read_text(encoding="utf-8")
+    paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+    body = [p for p in paragraphs if not p.startswith("#")]
+    return " ".join(body[0].split()) if body else name

@@ -5,7 +5,15 @@ from pathlib import Path
 
 import pytest
 
-from domestique.chat.modes import MODES, ModeContext, context_for, load_mode, prefix, skills_dir
+from domestique.chat.modes import (
+    MODES,
+    ModeContext,
+    context_for,
+    describe,
+    load_mode,
+    prefix,
+    skills_dir,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 CTX = ModeContext(date(2026, 3, 2), "Europe/Berlin", "athlete-synth-1")
@@ -39,3 +47,11 @@ def test_skills_dir_override_and_today_in_the_athletes_timezone(tmp_path):
     assert skills_dir({"DOMESTIQUE_SKILLS_DIR": str(tmp_path)}) == tmp_path
     late = datetime(2026, 3, 2, 23, 30, tzinfo=UTC)  # already the 3rd in Berlin
     assert context_for("a", "Europe/Berlin", late).today == date(2026, 3, 3)
+
+
+def test_description_is_the_skill_files_first_paragraph(tmp_path):
+    (tmp_path / "weekly-review.md").write_text(
+        "# weekly-review\n\nRuns once\na week.\n\n## Inputs\n"
+    )
+    assert describe("weekly-review", tmp_path) == "Runs once a week."
+    assert all(describe(name) for name in MODES)
