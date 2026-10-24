@@ -26,8 +26,8 @@ import httpx
 
 from domestique import db
 from domestique.ingest import fuel_tag, icu_client
-from domestique.ingest.icu import SOURCE, cli_settings
 from domestique.ingest.icu_client import IcuPayload
+from domestique.ingest.settings import SOURCE, cli_settings
 from domestique.output.comments import is_system_comment
 
 

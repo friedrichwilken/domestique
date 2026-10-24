@@ -1,4 +1,5 @@
 import os
+import uuid
 from datetime import date, datetime
 
 import httpx
@@ -107,23 +108,43 @@ def test_api_key_missing(monkeypatch, tmp_path):
         icu_client.get_api_key()
 
 
-@pytest.mark.skipif(not os.environ.get("DOMESTIQUE_TEST_DSN"), reason="needs a Postgres DSN")
-def test_ingest_is_idempotent(intervals):
-    """Integration: set DOMESTIQUE_TEST_DSN to a scratch TimescaleDB database."""
+FUEL_COMMENT = {
+    "id": 7001,
+    "athlete_id": "i000000",
+    "name": "Synthetic Athlete",
+    "created": "2026-09-08T19:00:00Z",
+    "content": "Steady.\n#fuel 750ml 80g",
+    "start_index": None,
+    "end_index": None,
+    "deleted": False,
+}
+
+
+def fake_icu(athlete_id, intervals, messages, activity=None):
+    """An IcuClient over a mock transport: activities, streams, intervals, comments, wellness."""
+    seen = []
+    routes = {
+        "/activities": [activity or {**ACTIVITY, "carbs_ingested": 60}],
+        "/streams": streams_from(intervals),
+        "/intervals": {"icu_intervals": []},
+        "/messages": messages,
+        "/wellness": [{"id": "2026-09-08", "hrv": 90}],
+    }
 
     def handler(request: httpx.Request) -> httpx.Response:
         p = request.url.path
-        if p.endswith("/activities"):
-            return httpx.Response(200, json=[ACTIVITY])
-        if p.endswith("/streams"):
-            return httpx.Response(200, json=streams_from(intervals))
-        if p.endswith("/intervals"):
-            return httpx.Response(200, json={"icu_intervals": []})
-        return httpx.Response(200, json=[{"id": "2026-09-08", "hrv": 90}])
+        seen.append(p)
+        body = next(v for suffix, v in routes.items() if p.endswith(suffix))
+        return httpx.Response(200, json=body)
 
-    client = icu_client.IcuClient(
-        "iTest", icu_client.make_client("k", transport=httpx.MockTransport(handler))
-    )
+    http = icu_client.make_client("k", transport=httpx.MockTransport(handler))
+    return icu_client.IcuClient(athlete_id, http), seen
+
+
+@pytest.mark.skipif(not os.environ.get("DOMESTIQUE_TEST_DSN"), reason="needs a Postgres DSN")
+def test_ingest_is_idempotent(intervals):
+    """Integration: set DOMESTIQUE_TEST_DSN to a scratch TimescaleDB database."""
+    client, _ = fake_icu("iTest", intervals, [], ACTIVITY)
     with db.connect(os.environ["DOMESTIQUE_TEST_DSN"]) as conn:
         db.migrate(conn)
         for _ in range(2):
@@ -134,3 +155,62 @@ def test_ingest_is_idempotent(intervals):
             "SELECT count(*) FROM activities WHERE external_id = 'i1001' AND athlete_id = 'iTest'"
         ).fetchone()[0]
         assert n == 1
+
+
+@pytest.mark.skipif(not os.environ.get("DOMESTIQUE_TEST_DSN"), reason="needs a Postgres DSN")
+@pytest.mark.parametrize("with_comments", [True, False])
+def test_ingest_stores_comments_and_intake(intervals, with_comments):
+    athlete = f"iT{uuid.uuid4().hex[:8]}"
+    client, seen = fake_icu(athlete, intervals, [FUEL_COMMENT])
+    with db.connect(os.environ["DOMESTIQUE_TEST_DSN"]) as conn:
+        db.migrate(conn)
+        counts = icu.ingest(
+            conn, client, date(2026, 9, 1), date(2026, 9, 30), with_comments=with_comments
+        )
+        (aid,) = conn.execute(
+            "SELECT id FROM activities WHERE athlete_id = %s AND external_id = 'i1001'",
+            (athlete,),
+        ).fetchone()
+        comments = conn.execute(
+            "SELECT external_id, tags FROM subjective WHERE athlete_id = %s AND activity_id = %s",
+            (athlete, aid),
+        ).fetchall()
+        intake = conn.execute(
+            "SELECT fluid_ml, carbs_g, platform_carbs_g, carbs_differ "
+            "FROM activity_intake WHERE activity_id = %s",
+            (aid,),
+        ).fetchall()
+    if with_comments:
+        assert counts == {"activities": 1, "comments": 1, "wellness": 1}
+        assert seen.count("/api/v1/activity/i1001/messages") == 1
+        assert comments == [("7001", ["comment", "fuel"])]
+        assert intake == [(750, 80, 60, True)]
+    else:
+        assert counts == {"activities": 1, "comments": 0, "wellness": 1}
+        assert not any(p.endswith("/messages") for p in seen)
+        assert (comments, intake) == ([], [])
+
+
+def test_main_parses_no_comments(monkeypatch):
+    calls = {}
+
+    class Conn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    def fake_ingest(conn, client, oldest, newest, with_streams, with_comments):
+        calls.update(with_streams=with_streams, with_comments=with_comments)
+        return {"activities": 0, "comments": 0, "wellness": 0}
+
+    monkeypatch.setattr(icu, "cli_settings", lambda: ("iX", "postgresql://unused/db"))
+    monkeypatch.setattr(icu.db, "connect", lambda dsn: Conn())
+    monkeypatch.setattr(icu.db, "migrate", lambda conn: [])
+    monkeypatch.setattr(icu.icu_client, "make_client", lambda: None)
+    monkeypatch.setattr(icu, "ingest", fake_ingest)
+    icu.main(["--from", "2026-09-01", "--no-comments"])
+    assert calls == {"with_streams": True, "with_comments": False}
+    icu.main(["--from", "2026-09-01"])
+    assert calls["with_comments"] is True
