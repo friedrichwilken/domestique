@@ -48,6 +48,19 @@ client-side framework. It holds no language-model dependency.
   confidence against observed hit rate, one marker per scored claim, with the
   diagonal drawn.
 - `/claims.json`: the same data, every prediction. `/healthz`: liveness.
+- `/day/YYYY-MM-DD` (`/day` redirects to today in the configured timezone):
+  the triggered rails with their wording verbatim, plan versus execution per
+  planned session (HRmax and `overshoot_margin_pp` from `config.yaml`,
+  thresholds from `rails.yaml`) and the open questions whose context names
+  the day (or, without a date, that were asked on it). A rail that stops the
+  plan or rules out intensity is listed first and withholds the ride
+  analysis. `/day/YYYY-MM-DD.json` has the same data.
+- Human gate: a candidate claim's row has a form to confirm or retire it, a
+  flagged row one to clear its flags. Both `POST` with the reason and
+  `DOMESTIQUE_HUMAN_TOKEN` in the form body (never a query string or cookie),
+  checked by `domestique.claims.gate`, the same check as the claims MCP
+  server; a wrong token is a 403 and writes nothing. The history row says
+  `by: console`.
 - Run: `just web` builds and starts the `app` service in
   `docker-compose.yml` next to `db`. It publishes on `127.0.0.1` only
   (`DOMESTIQUE_WEB_PORT`, default 8000), mounts `$DOMESTIQUE_HOME` read-only

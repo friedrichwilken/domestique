@@ -29,7 +29,9 @@ from the repository.
 `http://127.0.0.1:8000/claims`: every claim with its confidence, hit rate,
 error against its pre-registered range and calibration flags, a strip of
 predicted range against observed value per claim, and stated confidence
-against observed hit rate. `/claims.json` has the same data. It binds to
+against observed hit rate. `/claims.json` has the same data. `/day` shows
+today's rails, plan versus execution and open questions; candidate claims
+are confirmed or retired from the claims page with the human token. It binds to
 localhost only and mounts `$DOMESTIQUE_HOME` read-only; the page is full of
 personal data, so it is never published. `just eval --html evals/out/claims.html`
 writes the same page for the synthetic fixture season. Details in

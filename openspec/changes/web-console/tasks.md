@@ -13,5 +13,5 @@
 
 ## 3. Day view and human gate
 
-- [ ] 3.1 `/day/{date}` page: rails results via `rails.load.load_day` and `rails.registry.evaluate`, plan-vs-execution rows via `analysis.plan_vs_execution`, open questions; default date is today in the configured timezone; test: a fixture day with one triggered rail and one overshoot question renders both wordings unchanged
-- [ ] 3.2 Human gate: `POST /claims/{id}/decide` (status, reason, token) and `POST /claims/{id}/clear-flags` through the Postgres `ClaimsStore`; a wrong token returns 403 and writes nothing; test: correct token confirms a candidate and the history row carries `by`; wrong token leaves the claim unchanged
+- [x] 3.1 `/day/{date}` page: rails results via `rails.load.load_day` and `rails.registry.evaluate`, plan-vs-execution rows via `analysis.plan_vs_execution`, open questions; default date is today in the configured timezone; test: a fixture day with one triggered rail and one overshoot question renders both wordings unchanged
+- [x] 3.2 Human gate: `POST /claims/{id}/decide` (status, reason, token) and `POST /claims/{id}/clear-flags` through the Postgres `ClaimsStore`; a wrong token returns 403 and writes nothing; test: correct token confirms a candidate and the history row carries `by`; wrong token leaves the claim unchanged
