@@ -1,7 +1,7 @@
 # web-console Specification
 
 ## Purpose
-TBD - created by archiving change web-console. Update Purpose after archive.
+A local web console over the claims store and the day: the calibration report, the day view of rails, plan versus execution and open questions, and the human gate as a form, so the athlete can read and decide without a shell.
 
 ## Requirements
 
