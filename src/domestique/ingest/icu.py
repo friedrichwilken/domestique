@@ -3,7 +3,10 @@
 Idempotent: activities upsert on (athlete_id, source, external_id); streams and
 intervals are replaced per activity; wellness upserts on (athlete_id, date).
 
-Usage: python -m domestique.ingest.icu --from 2026-09-01 [--to 2026-09-30]
+Comments on the stored activities, and the ``#fuel`` intake they carry, are
+ingested in the same run (``icu_comments``); ``--no-comments`` skips them.
+
+Usage: python -m domestique.ingest.icu --from 2026-09-01 [--to 2026-09-30] [--no-comments]
 
 Field names below follow the intervals.icu API as seen in the activities and
 wellness endpoints; streams and per-interval L/R names are best-effort (see
@@ -14,16 +17,16 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 from collections.abc import Mapping, Sequence
 from datetime import UTC, date, datetime
 from typing import Any, TypedDict
 
 import psycopg
 
-from domestique import config, db
-from domestique.ingest import icu_client
+from domestique import db
+from domestique.ingest import icu_client, icu_comments
 from domestique.ingest.icu_client import IcuPayload
+from domestique.ingest.settings import SOURCE, cli_settings
 from domestique.metrics import (
     Interval,
     Sample,
@@ -33,7 +36,6 @@ from domestique.metrics import (
     lr_balance,
 )
 
-SOURCE = "intervals.icu"
 STREAM_TYPES = "time,watts,heartrate,cadence,temp,left_right_balance"
 
 
@@ -343,49 +345,48 @@ def store_wellness(conn: db.Conn, row: WellnessRow) -> None:
 # --- orchestration ---------------------------------------------------------
 
 
+def ingest_one(
+    conn: db.Conn, client: icu_client.IcuClient, a: IcuPayload, with_streams: bool = True
+) -> icu_comments.StoredActivity:
+    """Fetch and store one activity with its intervals (and streams); returns what was stored."""
+    samples = samples_from_streams(client.streams(a["id"], STREAM_TYPES)) if with_streams else []
+    row = map_activity(a, client.athlete_id, samples)
+    intervals = map_intervals(client.intervals(a["id"]), samples)
+    activity_id = store_activity(conn, row, intervals, samples)
+    return icu_comments.StoredActivity(activity_id, row["external_id"], row["carbs_ingested_g"])
+
+
 def ingest(
     conn: db.Conn,
     client: icu_client.IcuClient,
     oldest: date,
     newest: date,
     with_streams: bool = True,
+    with_comments: bool = True,
+    comments_api: icu_comments.CommentsApi | None = None,
 ) -> dict[str, int]:
+    """Activities, then their comments and per-ride intake, then wellness for the range.
+
+    Comments are read for exactly the activities stored in this run (one
+    request each); ``comments_api`` defaults to one over the client's HTTP
+    session.
+    """
     athlete_id = client.athlete_id
     activities = sorted(
         client.activities(oldest.isoformat(), newest.isoformat()),
         key=lambda a: a["start_date_local"],
     )
-    n_act = 0
-    for a in activities:
-        samples = (
-            samples_from_streams(client.streams(a["id"], STREAM_TYPES)) if with_streams else []
-        )
-        row = map_activity(a, athlete_id, samples)
-        intervals = map_intervals(client.intervals(a["id"]), samples)
-        store_activity(conn, row, intervals, samples)
-        n_act += 1
+    stored = [ingest_one(conn, client, a, with_streams) for a in activities]
+    n_comments = 0
+    if with_comments:
+        api = comments_api or icu_comments.CommentsApi(client.http)
+        n_comments = sum(icu_comments.ingest_activity(conn, api, athlete_id, s) for s in stored)
     n_well = 0
     for w in client.wellness(oldest.isoformat(), newest.isoformat()):
         store_wellness(conn, map_wellness(w, athlete_id))
         n_well += 1
     conn.commit()
-    return {"activities": n_act, "wellness": n_well}
-
-
-def cli_settings(env: Mapping[str, str] | None = None) -> tuple[str, str | None]:
-    """Athlete id and database URL for the CLIs: config.yaml, overridden by the environment.
-
-    ``ICU_ATHLETE_ID`` and ``DOMESTIQUE_DSN`` win over ``athlete_id`` and
-    ``database_url`` in the config; the config is only required when the
-    environment does not supply both.
-    """
-    source: Mapping[str, str] = os.environ if env is None else env
-    athlete_id = source.get("ICU_ATHLETE_ID", "").strip()
-    dsn = source.get("DOMESTIQUE_DSN", "").strip()
-    if athlete_id and dsn:
-        return athlete_id, dsn
-    cfg = config.load(source)
-    return athlete_id or cfg.athlete_id, dsn or cfg.database_url
+    return {"activities": len(stored), "comments": n_comments, "wellness": n_well}
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -393,6 +394,9 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--from", dest="oldest", required=True, type=date.fromisoformat)
     p.add_argument("--to", dest="newest", type=date.fromisoformat, default=datetime.now(UTC).date())
     p.add_argument("--no-streams", action="store_true", help="skip per-second streams")
+    p.add_argument(
+        "--no-comments", action="store_true", help="skip activity comments and #fuel intake"
+    )
     args = p.parse_args(argv)
 
     athlete_id, dsn = cli_settings()
@@ -401,8 +405,18 @@ def main(argv: list[str] | None = None) -> None:
         if applied:
             print("applied migrations:", ", ".join(applied))
         client = icu_client.IcuClient(athlete_id, icu_client.make_client())
-        counts = ingest(conn, client, args.oldest, args.newest, with_streams=not args.no_streams)
-    print(f"ingested {counts['activities']} activities, {counts['wellness']} wellness days")
+        counts = ingest(
+            conn,
+            client,
+            args.oldest,
+            args.newest,
+            with_streams=not args.no_streams,
+            with_comments=not args.no_comments,
+        )
+    print(
+        f"ingested {counts['activities']} activities, {counts['comments']} comments, "
+        f"{counts['wellness']} wellness days"
+    )
 
 
 if __name__ == "__main__":

@@ -16,6 +16,12 @@ All athlete-specific configuration lives outside the repo in
 environment variables, see `.env.example`. Nothing personal is ever read
 from the repository.
 
+## Running
+
+- `just ingest --from 2026-09-01`: activities, wellness, and the comments and `#fuel` intake on those activities (`--no-comments` skips them).
+- `just comments --from 2026-09-01`: comments and `#fuel` intake only, for activities already ingested.
+- `just seed --file evals/priors.yaml`: load a seed file into the claims store; claims stay candidates until confirmed through the claims MCP (`--activate` skips that gate).
+
 ## Layout
 
 | Path | What |

@@ -35,6 +35,16 @@ db-up:
 eval *args:
     .venv/bin/python evals/replay.py {{args}}
 
+# activity comments and #fuel intake only (just ingest already includes them)
+comments *args:
+    docker compose up -d --wait
+    .venv/bin/python -m domestique.ingest.icu_comments {{args}}
+
+# load a seed file into the claims store; claims stay candidates unless --activate
+seed *args:
+    docker compose up -d --wait
+    .venv/bin/python -m domestique.claims.seed {{args}}
+
 # evaluate every safety rail for one day: just rails --date YYYY-MM-DD
 rails *args:
     .venv/bin/python -m domestique.rails {{args}}
