@@ -20,6 +20,9 @@ from pathlib import Path
 import yaml
 
 DEFAULT_HOME = Path("~/.config/domestique")
+# Plan vs execution: work-interval HR above the prescription by more than this many
+# percentage points of HRmax produces a question. Defined here so analysis imports config.
+DEFAULT_MARGIN_PP = 10.0
 
 
 @dataclass(frozen=True)
@@ -34,6 +37,7 @@ class Config:
     database_url: str | None = None
     # Post debriefs as comments on the athlete's activities. Off unless set.
     write_comments: bool = False
+    overshoot_margin_pp: float = DEFAULT_MARGIN_PP
 
 
 def home_dir(env: Mapping[str, str] | None = None) -> Path:
@@ -65,6 +69,7 @@ def load(env: Mapping[str, str] | None = None) -> Config:
         intent_dir=intent_dir,
         database_url=raw.get("database_url"),
         write_comments=_flag(raw, "write_comments", path),
+        overshoot_margin_pp=_number(raw, "overshoot_margin_pp", DEFAULT_MARGIN_PP, path),
     )
 
 
@@ -74,3 +79,11 @@ def _flag(raw: Mapping[str, object], key: str, path: Path) -> bool:
     if not isinstance(value, bool):
         raise TypeError(f"{path}: '{key}' must be true or false, got {value!r}")
     return value
+
+
+def _number(raw: Mapping[str, object], key: str, default: float, path: Path) -> float:
+    """A non-negative number that defaults when absent; anything else is an error."""
+    value = raw.get(key, default)
+    if isinstance(value, bool) or not isinstance(value, int | float) or value < 0:
+        raise TypeError(f"{path}: '{key}' must be a non-negative number, got {value!r}")
+    return float(value)
